@@ -1,0 +1,32 @@
+{
+  "collectionName": "components_job_assign_candidates",
+  "info": {
+    "displayName": "assignCandidates",
+    "icon": "user"
+  },
+  "options": {},
+  "attributes": {
+    "candidateProcessList": {
+      "type": "string"
+    },
+    "candidate": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::candidate.candidate"
+    },
+    "offerLetter": {
+      "type": "media",
+      "multiple": false,
+      "allowedTypes": [
+        "images",
+        "files"
+      ]
+    },
+    "pipline_chats": {
+      "type": "relation",
+      "relation": "oneToMany",
+      "target": "api::pipline-chat.pipline-chat"
+    }
+  },
+  "config": {}
+}

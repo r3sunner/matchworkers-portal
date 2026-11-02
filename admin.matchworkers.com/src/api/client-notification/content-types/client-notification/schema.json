@@ -1,0 +1,50 @@
+{
+  "kind": "collectionType",
+  "collectionName": "client_notifications",
+  "info": {
+    "singularName": "client-notification",
+    "pluralName": "client-notifications",
+    "displayName": "Notification"
+  },
+  "options": {
+    "draftAndPublish": true
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "title": {
+      "type": "string"
+    },
+    "details": {
+      "type": "text"
+    },
+    "sendEmail": {
+      "type": "boolean",
+      "default": false
+    },
+    "openMessage": {
+      "type": "boolean",
+      "default": false
+    },
+    "openHistory": {
+      "type": "text"
+    },
+    "client": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::client.client",
+      "inversedBy": "client_notifications"
+    },
+    "staff": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::staff.staff",
+      "inversedBy": "client_notifications"
+    },
+    "candidate": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::candidate.candidate",
+      "inversedBy": "client_notifications"
+    }
+  }
+}

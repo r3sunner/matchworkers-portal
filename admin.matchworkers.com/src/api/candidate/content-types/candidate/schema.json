@@ -1,0 +1,154 @@
+{
+  "kind": "collectionType",
+  "collectionName": "candidates",
+  "info": {
+    "singularName": "candidate",
+    "pluralName": "candidates",
+    "displayName": "Candidate"
+  },
+  "options": {
+    "draftAndPublish": true
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "fullName": {
+      "type": "string"
+    },
+    "firstName": {
+      "type": "string"
+    },
+    "lastName": {
+      "type": "string"
+    },
+    "mobile": {
+      "type": "string"
+    },
+    "birthDate": {
+      "type": "date"
+    },
+    "shortSummary": {
+      "type": "text"
+    },
+    "CV": {
+      "type": "media",
+      "multiple": false,
+      "allowedTypes": [
+        "files",
+        "images"
+      ]
+    },
+    "passport": {
+      "type": "media",
+      "multiple": false,
+      "allowedTypes": [
+        "images",
+        "files",
+        "audios"
+      ]
+    },
+    "passportExpireDate": {
+      "type": "date"
+    },
+    "documents": {
+      "type": "component",
+      "component": "documents.files",
+      "repeatable": true
+    },
+    "privateNotes": {
+      "type": "text"
+    },
+    "job_roles": {
+      "type": "relation",
+      "relation": "manyToMany",
+      "target": "api::job-role.job-role",
+      "mappedBy": "candidates"
+    },
+    "users_permissions_user": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "plugin::users-permissions.user"
+    },
+    "jobStatus": {
+      "type": "string",
+      "default": "Available"
+    },
+    "jobs": {
+      "type": "relation",
+      "relation": "manyToMany",
+      "target": "api::job.job",
+      "inversedBy": "candidates"
+    },
+    "referenceNumber": {
+      "type": "string",
+      "unique": true
+    },
+    "type": {
+      "type": "string",
+      "default": "candidate"
+    },
+    "numberOfExperience": {
+      "type": "decimal"
+    },
+    "currentJobExperiece": {
+      "type": "decimal"
+    },
+    "previousJobExperiece": {
+      "type": "decimal"
+    },
+    "previousCompany": {
+      "type": "string"
+    },
+    "dateScreeningInterview": {
+      "type": "date"
+    },
+    "currentlyEmployed": {
+      "type": "boolean"
+    },
+    "genderList": {
+      "type": "string"
+    },
+    "nationalityList": {
+      "type": "string"
+    },
+    "maritalStatusList": {
+      "type": "string"
+    },
+    "seasonalStatusList": {
+      "type": "string"
+    },
+    "englishLevelList": {
+      "type": "string"
+    },
+    "isProfileVerifiedList": {
+      "type": "string"
+    },
+    "currentCompany": {
+      "type": "string"
+    },
+    "workingVideoLink": {
+      "type": "string"
+    },
+    "miScreeningVideoLink": {
+      "type": "string"
+    },
+    "agent": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::agent.agent",
+      "inversedBy": "candidates"
+    },
+    "profileImage": {
+      "type": "media",
+      "multiple": false,
+      "allowedTypes": [
+        "images"
+      ]
+    },
+    "client_notifications": {
+      "type": "relation",
+      "relation": "oneToMany",
+      "target": "api::client-notification.client-notification",
+      "mappedBy": "candidate"
+    }
+  }
+}

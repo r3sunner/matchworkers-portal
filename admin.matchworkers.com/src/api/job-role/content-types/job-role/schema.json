@@ -1,0 +1,26 @@
+{
+  "kind": "collectionType",
+  "collectionName": "job_roles",
+  "info": {
+    "singularName": "job-role",
+    "pluralName": "job-roles",
+    "displayName": "Job Role"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "title": {
+      "type": "string",
+      "required": false,
+      "unique": true
+    },
+    "candidates": {
+      "type": "relation",
+      "relation": "manyToMany",
+      "target": "api::candidate.candidate",
+      "inversedBy": "job_roles"
+    }
+  }
+}

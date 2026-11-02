@@ -1,0 +1,27 @@
+{
+  "collectionName": "components_documents_files",
+  "info": {
+    "displayName": "Files",
+    "icon": "apps"
+  },
+  "options": {},
+  "attributes": {
+    "name": {
+      "type": "string"
+    },
+    "file": {
+      "type": "media",
+      "multiple": false,
+      "allowedTypes": [
+        "images",
+        "files",
+        "videos",
+        "audios"
+      ]
+    },
+    "remarks": {
+      "type": "text"
+    }
+  },
+  "config": {}
+}

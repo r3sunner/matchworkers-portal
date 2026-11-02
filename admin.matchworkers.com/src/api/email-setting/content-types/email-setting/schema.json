@@ -1,0 +1,23 @@
+{
+  "kind": "singleType",
+  "collectionName": "email_settings",
+  "info": {
+    "singularName": "email-setting",
+    "pluralName": "email-settings",
+    "displayName": "EmailSetting"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "title": {
+      "type": "string"
+    },
+    "SendEmailList": {
+      "type": "component",
+      "component": "contact.send-email-list",
+      "repeatable": true
+    }
+  }
+}

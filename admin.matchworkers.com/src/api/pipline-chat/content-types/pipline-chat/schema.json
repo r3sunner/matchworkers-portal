@@ -1,0 +1,50 @@
+{
+  "kind": "collectionType",
+  "collectionName": "pipline_chats",
+  "info": {
+    "singularName": "pipline-chat",
+    "pluralName": "pipline-chats",
+    "displayName": "Pipline Chat"
+  },
+  "options": {
+    "draftAndPublish": true
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "message": {
+      "type": "text"
+    },
+    "private": {
+      "type": "boolean",
+      "default": false
+    },
+    "isSystemGenerated": {
+      "type": "boolean",
+      "default": false
+    },
+    "history": {
+      "type": "text"
+    },
+    "staff": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::staff.staff",
+      "inversedBy": "pipline_chats"
+    },
+    "client": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::client.client",
+      "inversedBy": "pipline_chats"
+    },
+    "personName": {
+      "type": "string"
+    },
+    "jobDocumentId": {
+      "type": "string"
+    },
+    "candidateDocumentId": {
+      "type": "string"
+    }
+  }
+}

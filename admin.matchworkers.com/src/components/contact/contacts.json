@@ -1,0 +1,23 @@
+{
+  "collectionName": "components_contact_contacts",
+  "info": {
+    "displayName": "contacts",
+    "icon": "bulletList"
+  },
+  "options": {},
+  "attributes": {
+    "name": {
+      "type": "string"
+    },
+    "designation": {
+      "type": "string"
+    },
+    "mobile": {
+      "type": "string"
+    },
+    "remarks": {
+      "type": "string"
+    }
+  },
+  "config": {}
+}

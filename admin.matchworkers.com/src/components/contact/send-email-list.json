@@ -1,0 +1,13 @@
+{
+  "collectionName": "components_contact_send_email_lists",
+  "info": {
+    "displayName": "SendEmailList"
+  },
+  "options": {},
+  "attributes": {
+    "email": {
+      "type": "email"
+    }
+  },
+  "config": {}
+}

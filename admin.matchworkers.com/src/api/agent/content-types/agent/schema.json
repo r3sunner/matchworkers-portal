@@ -1,0 +1,64 @@
+{
+  "kind": "collectionType",
+  "collectionName": "agents",
+  "info": {
+    "singularName": "agent",
+    "pluralName": "agents",
+    "displayName": "Agent"
+  },
+  "options": {
+    "draftAndPublish": true
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "companyName": {
+      "type": "string"
+    },
+    "contactName": {
+      "type": "string"
+    },
+    "designation": {
+      "type": "string"
+    },
+    "city": {
+      "type": "string"
+    },
+    "address": {
+      "type": "string"
+    },
+    "phone": {
+      "type": "string"
+    },
+    "webiste": {
+      "type": "string"
+    },
+    "contactList": {
+      "type": "component",
+      "component": "contact.contacts",
+      "repeatable": true
+    },
+    "candidates": {
+      "type": "relation",
+      "relation": "oneToMany",
+      "target": "api::candidate.candidate",
+      "mappedBy": "agent"
+    },
+    "users_permissions_user": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "plugin::users-permissions.user"
+    },
+    "countryList": {
+      "type": "string"
+    },
+    "shortDescription": {
+      "type": "text"
+    },
+    "privateNote": {
+      "type": "text"
+    },
+    "statusList": {
+      "type": "string"
+    }
+  }
+}

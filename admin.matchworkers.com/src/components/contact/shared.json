@@ -1,0 +1,36 @@
+{
+  "collectionName": "components_contact_shareds",
+  "info": {
+    "displayName": "Shared",
+    "icon": "collapse"
+  },
+  "options": {},
+  "attributes": {
+    "firstName": {
+      "type": "string"
+    },
+    "lastName": {
+      "type": "string"
+    },
+    "designation": {
+      "type": "string"
+    },
+    "email": {
+      "type": "email"
+    },
+    "mobile": {
+      "type": "string"
+    },
+    "workPhone": {
+      "type": "string"
+    },
+    "contactStatus": {
+      "type": "enumeration",
+      "enum": [
+        "Active",
+        "Inactive"
+      ]
+    }
+  },
+  "config": {}
+}

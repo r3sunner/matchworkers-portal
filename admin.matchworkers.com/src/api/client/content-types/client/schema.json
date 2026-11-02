@@ -1,0 +1,98 @@
+{
+  "kind": "collectionType",
+  "collectionName": "clients",
+  "info": {
+    "singularName": "client",
+    "pluralName": "clients",
+    "displayName": "Client"
+  },
+  "options": {
+    "draftAndPublish": true
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "companyName": {
+      "type": "string"
+    },
+    "contactName": {
+      "type": "string"
+    },
+    "designation": {
+      "type": "string"
+    },
+    "city": {
+      "type": "string"
+    },
+    "address": {
+      "type": "string"
+    },
+    "phone": {
+      "type": "text"
+    },
+    "website": {
+      "type": "string"
+    },
+    "contactList": {
+      "type": "component",
+      "component": "contact.contacts",
+      "repeatable": true
+    },
+    "jobs": {
+      "type": "relation",
+      "relation": "oneToMany",
+      "target": "api::job.job",
+      "mappedBy": "client"
+    },
+    "users_permissions_user": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "plugin::users-permissions.user"
+    },
+    "logo": {
+      "type": "media",
+      "multiple": false,
+      "allowedTypes": [
+        "images"
+      ]
+    },
+    "countryList": {
+      "type": "string"
+    },
+    "industriesList": {
+      "type": "string"
+    },
+    "companySizeList": {
+      "type": "string"
+    },
+    "shortDescription": {
+      "type": "text"
+    },
+    "privateNote": {
+      "type": "text"
+    },
+    "statusList": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string",
+      "default": "client"
+    },
+    "leadStatus": {
+      "type": "string",
+      "default": "Lead",
+      "required": true
+    },
+    "pipline_chats": {
+      "type": "relation",
+      "relation": "oneToMany",
+      "target": "api::pipline-chat.pipline-chat",
+      "mappedBy": "client"
+    },
+    "client_notifications": {
+      "type": "relation",
+      "relation": "oneToMany",
+      "target": "api::client-notification.client-notification",
+      "mappedBy": "client"
+    }
+  }
+}

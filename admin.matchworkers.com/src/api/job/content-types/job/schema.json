@@ -1,0 +1,68 @@
+{
+  "kind": "collectionType",
+  "collectionName": "jobs",
+  "info": {
+    "singularName": "job",
+    "pluralName": "jobs",
+    "displayName": "Job"
+  },
+  "options": {
+    "draftAndPublish": true
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "title": {
+      "type": "string"
+    },
+    "details": {
+      "type": "blocks"
+    },
+    "closingDate": {
+      "type": "date"
+    },
+    "location": {
+      "type": "string"
+    },
+    "candidates": {
+      "type": "relation",
+      "relation": "manyToMany",
+      "target": "api::candidate.candidate",
+      "mappedBy": "jobs"
+    },
+    "statusList": {
+      "type": "string"
+    },
+    "industeryList": {
+      "type": "string"
+    },
+    "shortDescription": {
+      "type": "text"
+    },
+    "jobTypeList": {
+      "type": "string"
+    },
+    "showToCandidateList": {
+      "type": "string"
+    },
+    "vacanciesNo": {
+      "type": "integer"
+    },
+    "client": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::client.client",
+      "inversedBy": "jobs"
+    },
+    "experience": {
+      "type": "integer"
+    },
+    "referenceNo": {
+      "type": "string"
+    },
+    "assignCandidatesToJob": {
+      "type": "component",
+      "component": "job.assign-candidates",
+      "repeatable": true
+    }
+  }
+}
