@@ -62,11 +62,11 @@ export default async function HomePage() {
   }
 
   if (role === "client") {
-    redirect(`/client/${user?.documentId}`);
+    redirect("/client");
   }
 
   if (role === "candidate") {
-    redirect(`/candidate/${user?.documentId}/dashboard`);
+    redirect("/candidate");
   }
 
   redirect("/login");
