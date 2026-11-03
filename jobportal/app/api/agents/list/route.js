@@ -1,5 +1,6 @@
 export const runtime = "nodejs";
 import qs from "qs";
+import { requireAuth } from "@/lib/requireAuth";
 
 function joinUrl(base, path) {
     const b = String(base || "").replace(/\/+$/, "");
@@ -44,6 +45,10 @@ function getUserFields(agent) {
 }
 
 export async function GET(req) {
+    // Security: staff-only. Reject unauthenticated / non-staff callers.
+    const auth = await requireAuth(["staff"]);
+    if (!auth.ok) return auth.response;
+
     const STRAPI_BASE_URL = process.env.STRAPI_BASE_URL;
     const RAW_TOKEN = String(process.env.STRAPI_TOKEN || "").trim();
 
