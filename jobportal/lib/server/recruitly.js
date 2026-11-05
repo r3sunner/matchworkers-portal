@@ -18,6 +18,10 @@ const ALLOWED_FILE_CATEGORIES = new Set([
     FILE_CATEGORY_PHOTO,
 ]);
 
+// Recruitly custom fields the portal imports, by field ID (labels can change).
+export const CUSTOM_FIELD_WORKING_VIDEO_LINK = "matc8992fd3d4d3f40deb4ea49efd47603c1";
+export const CUSTOM_FIELD_YEARS_OF_EXPERIENCE = "matc45a9109b69594fc6a7865991da39514d";
+
 export class RecruitlyError extends Error {
     constructor(message, { status = 0, path = "" } = {}) {
         super(message);
@@ -104,7 +108,9 @@ export async function recruitlyRequest(method, path, { params, counter, binary =
         };
     }
 
-    return res.json();
+    // Some endpoints answer an unknown id with 200 and an empty body.
+    const text = await res.text();
+    return text ? JSON.parse(text) : null;
 }
 
 export function listJobs({ page, size, counter } = {}) {
@@ -118,37 +124,65 @@ export function getJob(jobId, { counter } = {}) {
     return recruitlyRequest("GET", `/api/nova/jobs/${encodeId(jobId, "jobId")}`, { counter });
 }
 
-export function listJobPipeline(jobId, { page, size, counter } = {}) {
-    return recruitlyRequest("GET", `/api/nova/jobs/${encodeId(jobId, "jobId")}/pipeline`, {
-        params: { page, size },
-        counter,
-    });
-}
-
-// The pipeline is paged (pages start at 0, Recruitly caps size at 100), so
-// read every page. MAX_PIPELINE_PAGES stops a runaway loop on bad totals.
-const PIPELINE_PAGE_SIZE = 100;
-const MAX_PIPELINE_PAGES = 100;
-
+// Every pipeline entry of a job in one call (unlike the paged
+// /jobs/{id}/pipeline). `complete` is false if Recruitly sent fewer than its total.
 export async function listAllJobPipeline(jobId, { counter } = {}) {
-    const entries = [];
-    let total = 0;
-
-    for (let page = 0; page < MAX_PIPELINE_PAGES; page += 1) {
-        const json = await listJobPipeline(jobId, { page, size: PIPELINE_PAGE_SIZE, counter });
-        const rows = Array.isArray(json?.data) ? json.data : [];
-
-        total = Number(json?.total) || 0;
-        entries.push(...rows);
-
-        if (rows.length === 0 || entries.length >= total) break;
-    }
+    const json = await recruitlyRequest("GET", `/api/nova/pipelines/job/${encodeId(jobId, "jobId")}`, { counter });
+    const entries = Array.isArray(json?.data) ? json.data : [];
+    const total = Number(json?.total) || entries.length;
 
     return { entries, total, complete: entries.length >= total };
 }
 
+// Full candidate profile. Uses /api/candidate/{id} because the Nova candidate
+// endpoint has no gender or nationalities. The profile also holds fields the
+// portal must never copy (date of birth, NI number, notes): read it through
+// toImportCandidate() only. Returns null for an unknown id.
 export function getCandidate(candidateId, { counter } = {}) {
-    return recruitlyRequest("GET", `/api/nova/candidates/${encodeId(candidateId, "candidateId")}`, { counter });
+    return recruitlyRequest("GET", `/api/candidate/${encodeId(candidateId, "candidateId")}`, { counter });
+}
+
+// Stage, placement status, employment type and gender lists (id + name).
+// Recruitly wraps this response in `data`.
+export async function getMasterdata({ counter } = {}) {
+    const json = await recruitlyRequest("GET", "/api/nova/masterdata", { counter });
+    return json?.data && !Array.isArray(json.data) ? json.data : json;
+}
+
+function customFieldValue(profile, fieldId) {
+    const field = (profile?.udfList || []).find((f) => f?.key?.id === fieldId);
+    const text = String(field?.value?.textValue ?? "").trim();
+    if (text) return text;
+
+    const list = field?.value?.listValue;
+    return Array.isArray(list) ? list.join(", ") : "";
+}
+
+function nameList(values) {
+    return (Array.isArray(values) ? values : [])
+        .map((v) => (typeof v === "string" ? v : v?.name || ""))
+        .map((v) => v.trim())
+        .filter(Boolean);
+}
+
+// The only candidate fields the import uses (agreed field mapping, 4 Nov).
+export function toImportCandidate(profile) {
+    const firstName = String(profile?.firstName || "").trim();
+    const lastName = String(profile?.surname || "").trim();
+
+    return {
+        recruitlyId: profile?.id ?? null,
+        reference: profile?.reference || "",
+        fullName: String(profile?.fullName || "").trim() || `${firstName} ${lastName}`.trim(),
+        firstName,
+        lastName,
+        jobTitle: profile?.jobTitle || "",
+        gender: String(profile?.gender || "").trim(),
+        nationalities: nameList(profile?.nationalities),
+        overview: profile?.overview || "",
+        yearsOfExperience: customFieldValue(profile, CUSTOM_FIELD_YEARS_OF_EXPERIENCE),
+        workingVideoLink: customFieldValue(profile, CUSTOM_FIELD_WORKING_VIDEO_LINK),
+    };
 }
 
 export function listFileCategories({ counter } = {}) {
@@ -166,6 +200,28 @@ export async function listCandidateFiles(candidateId, { counter } = {}) {
     const files = Array.isArray(json?.data) ? json.data : Array.isArray(json) ? json : [];
 
     return files.filter(isAllowedFile);
+}
+
+// Recruitly dates read "dd/mm/yyyy HH:MM:SS".
+function fileTime(file) {
+    const m = String(file?.uploadedOn || "").match(/^(\d{2})\/(\d{2})\/(\d{4})(?: (\d{2}):(\d{2}):(\d{2}))?/);
+    if (!m) return 0;
+
+    const [, dd, mm, yyyy, hh = "00", mi = "00", ss = "00"] = m;
+    return Date.UTC(+yyyy, +mm - 1, +dd, +hh, +mi, +ss);
+}
+
+// R2: newest file per allowed category, or null when there is none.
+export function latestFiles(files) {
+    const newest = (categoryId) =>
+        (files || [])
+            .filter((f) => f?.categoryId === categoryId)
+            .sort((a, b) => fileTime(b) - fileTime(a))[0] || null;
+
+    return {
+        fullCandidateProfile: newest(FILE_CATEGORY_FULL_CANDIDATE_PROFILE),
+        photo: newest(FILE_CATEGORY_PHOTO),
+    };
 }
 
 // Refuses any file outside the allow-list before a request is sent.

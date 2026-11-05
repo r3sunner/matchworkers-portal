@@ -1,6 +1,6 @@
 // GET /api/recruitly/jobs/<jobId>/pipeline/ – staff only.
-// Pipeline for one Recruitly job, every page read, rejected entries removed (R1).
-// One Recruitly call per 100 pipeline entries.
+// Pipeline for one Recruitly job, every entry, rejected entries removed (R1).
+// One Recruitly call.
 import { NextResponse } from "next/server";
 import { verifyStaffSession } from "@/lib/server/requireStaffSession";
 import { RecruitlyError, createCallCounter, listAllJobPipeline } from "@/lib/server/recruitly";

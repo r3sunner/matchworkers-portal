@@ -47,13 +47,14 @@ test("every exported call sends GET only", async () => {
 
     await recruitly.listJobs();
     await recruitly.getJob("job-1");
-    await recruitly.listJobPipeline("job-1");
+    await recruitly.listAllJobPipeline("job-1");
     await recruitly.getCandidate("cand-1");
+    await recruitly.getMasterdata();
     await recruitly.listFileCategories();
     await recruitly.listCandidateFiles("cand-1");
     await recruitly.downloadFile({ id: "f1", categoryId: FCP });
 
-    assert.equal(sent.length, 7);
+    assert.equal(sent.length, 8);
     assert.deepEqual([...new Set(sent.map((s) => s.method))], ["GET"]);
 });
 
@@ -102,7 +103,7 @@ test("download of any other category is refused before sending", () => {
 
 test("ids are encoded and empty ids refused", async () => {
     await recruitly.getCandidate("a/../b?x=1");
-    assert.ok(new URL(sent[0].url).pathname.endsWith("/api/nova/candidates/a%2F..%2Fb%3Fx%3D1"));
+    assert.ok(new URL(sent[0].url).pathname.endsWith("/api/candidate/a%2F..%2Fb%3Fx%3D1"));
 
     assert.throws(() => recruitly.getJob(""), /jobId is required/);
 });
@@ -110,35 +111,82 @@ test("ids are encoded and empty ids refused", async () => {
 test("call counter counts each call", async () => {
     const counter = recruitly.createCallCounter();
     await recruitly.listJobs({ counter });
-    await recruitly.listJobPipeline("job-1", { counter });
+    await recruitly.getMasterdata({ counter });
     assert.equal(counter.calls, 2);
 });
 
-test("pipeline reads every page from 0, 100 at a time", async () => {
-    const total = 250;
-    nextResponse = () => {
-        const url = new URL(sent.at(-1).url);
-        const page = Number(url.searchParams.get("page"));
-        const size = Number(url.searchParams.get("size"));
-        const count = Math.max(0, Math.min(size, total - page * size));
-        const data = Array.from({ length: count }, (_, i) => ({ id: `p${page * size + i}` }));
-        return new Response(JSON.stringify({ data, page, size, total }), { status: 200 });
-    };
+test("pipeline reads every entry of a job in one call", async () => {
+    const data = Array.from({ length: 250 }, (_, i) => ({ id: `p${i}` }));
+    nextResponse = () => new Response(JSON.stringify({ success: true, data, total: 250 }), { status: 200 });
 
     const counter = recruitly.createCallCounter();
     const result = await recruitly.listAllJobPipeline("job-1", { counter });
 
     assert.equal(result.entries.length, 250);
-    assert.equal(new Set(result.entries.map((e) => e.id)).size, 250);
     assert.equal(result.complete, true);
-    assert.equal(counter.calls, 3);
-    assert.deepEqual(sent.map((s) => new URL(s.url).searchParams.get("page")), ["0", "1", "2"]);
+    assert.equal(counter.calls, 1);
+    assert.ok(new URL(sent[0].url).pathname.endsWith("/api/nova/pipelines/job/job-1"));
 });
 
-test("pipeline stops and reports incomplete when pages run dry early", async () => {
-    nextResponse = () => new Response(JSON.stringify({ data: [], total: 50 }), { status: 200 });
+test("pipeline reports incomplete when Recruitly sends fewer than its total", async () => {
+    nextResponse = () => new Response(JSON.stringify({ data: [{ id: "p1" }], total: 50 }), { status: 200 });
 
     const result = await recruitly.listAllJobPipeline("job-1");
     assert.equal(result.complete, false);
-    assert.equal(sent.length, 1);
+});
+
+test("empty body (unknown id) returns null instead of failing", async () => {
+    nextResponse = () => new Response("", { status: 200 });
+    assert.equal(await recruitly.getCandidate("no-such-id"), null);
+});
+
+test("candidate mapping keeps only the import fields, custom fields by ID", () => {
+    const mapped = recruitly.toImportCandidate({
+        id: "c1",
+        reference: "CA-1",
+        firstName: "Test",
+        surname: "One",
+        fullName: "",
+        jobTitle: "Cleaner",
+        gender: "Male",
+        nationalities: ["Indian", { name: "Nepalese" }, ""],
+        overview: "Summary",
+        dateOfBirth: "01/01/1990",
+        niNumber: "AB123456C",
+        notes: "private",
+        udfList: [
+            { key: { id: recruitly.CUSTOM_FIELD_YEARS_OF_EXPERIENCE, label: "renamed label" }, value: { textValue: "4", listValue: [] } },
+            { key: { id: recruitly.CUSTOM_FIELD_WORKING_VIDEO_LINK }, value: { textValue: "", listValue: ["https://video"] } },
+            { key: { id: "other-field" }, value: { textValue: "ignored" } },
+        ],
+    });
+
+    assert.deepEqual(mapped, {
+        recruitlyId: "c1",
+        reference: "CA-1",
+        fullName: "Test One",
+        firstName: "Test",
+        lastName: "One",
+        jobTitle: "Cleaner",
+        gender: "Male",
+        nationalities: ["Indian", "Nepalese"],
+        overview: "Summary",
+        yearsOfExperience: "4",
+        workingVideoLink: "https://video",
+    });
+
+    const blank = recruitly.toImportCandidate({ id: "c2" });
+    assert.equal(blank.workingVideoLink, "");
+    assert.deepEqual(blank.nationalities, []);
+});
+
+test("latest file per category uses the dd/mm/yyyy upload date", () => {
+    const latest = recruitly.latestFiles([
+        { id: "old", categoryId: FCP, uploadedOn: "31/12/2025 23:59:59" },
+        { id: "new", categoryId: FCP, uploadedOn: "02/01/2026 08:00:00" },
+        { id: "mid", categoryId: FCP, uploadedOn: "01/02/2025 10:00:00" },
+    ]);
+
+    assert.equal(latest.fullCandidateProfile.id, "new");
+    assert.equal(latest.photo, null);
 });
