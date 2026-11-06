@@ -81,6 +81,35 @@ async function fetchStrapi(path, queryObj = {}) {
     return json;
 }
 
+// Strapi returns at most 100 rows per request (config/api.ts maxLimit), so a
+// larger pageSize is silently cut to 100. Read every page instead.
+const STRAPI_PAGE_SIZE = 100;
+const MAX_STRAPI_PAGES = 100;
+
+async function fetchAllStrapi(path, queryObj = {}) {
+    const rows = [];
+    const seen = new Set();
+
+    for (let page = 1; page <= MAX_STRAPI_PAGES; page += 1) {
+        const json = await fetchStrapi(path, {
+            ...queryObj,
+            pagination: { page, pageSize: STRAPI_PAGE_SIZE },
+        });
+
+        for (const row of safeArray(json?.data)) {
+            const key = row?.documentId || row?.id;
+            if (key && seen.has(key)) continue;
+            if (key) seen.add(key);
+            rows.push(row);
+        }
+
+        const pageCount = Number(json?.meta?.pagination?.pageCount) || 1;
+        if (page >= pageCount) break;
+    }
+
+    return { data: rows };
+}
+
 export async function GET() {
     try {
         const access = await requireSearchCandidatesAccess();
@@ -102,16 +131,14 @@ export async function GET() {
             : {};
 
         const [clientsJson, jobsJson, jobRolesJson] = await Promise.all([
-            fetchStrapi("/clients", {
+            fetchAllStrapi("/clients", {
                 ...ownClientFilter,
-                pagination: { page: 1, pageSize: access.isClient ? 1 : 500 },
-                sort: ["createdAt:desc"],
+                sort: ["createdAt:desc", "id:desc"],
             }),
-            fetchStrapi("/jobs", {
+            fetchAllStrapi("/jobs", {
                 ...ownJobsFilter,
                 fields: ["title", "referenceNo", "documentId"],
-                pagination: { page: 1, pageSize: 500 },
-                sort: ["createdAt:desc"],
+                sort: ["createdAt:desc", "id:desc"],
                 populate: {
                     client: {
                         fields: [
@@ -123,10 +150,9 @@ export async function GET() {
                     },
                 },
             }),
-            fetchStrapi("/job-roles", {
+            fetchAllStrapi("/job-roles", {
                 fields: ["title", "documentId"],
-                pagination: { page: 1, pageSize: 500 },
-                sort: ["title:asc"],
+                sort: ["title:asc", "id:asc"],
             }),
         ]);
 
