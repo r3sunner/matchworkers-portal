@@ -82,6 +82,14 @@
       "type": "string",
       "unique": true
     },
+    "recruitlyId": {
+      "type": "string",
+      "unique": true
+    },
+    "caNumber": {
+      "type": "string",
+      "unique": true
+    },
     "type": {
       "type": "string",
       "default": "candidate"

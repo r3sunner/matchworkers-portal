@@ -59,6 +59,10 @@
     "referenceNo": {
       "type": "string"
     },
+    "recruitlyJobId": {
+      "type": "string",
+      "unique": true
+    },
     "assignCandidatesToJob": {
       "type": "component",
       "component": "job.assign-candidates",

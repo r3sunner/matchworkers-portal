@@ -497,6 +497,7 @@ export interface ApiCandidateCandidate extends Struct.CollectionTypeSchema {
   attributes: {
     agent: Schema.Attribute.Relation<'manyToOne', 'api::agent.agent'>;
     birthDate: Schema.Attribute.Date;
+    caNumber: Schema.Attribute.String & Schema.Attribute.Unique;
     client_notifications: Schema.Attribute.Relation<
       'oneToMany',
       'api::client-notification.client-notification'
@@ -541,6 +542,7 @@ export interface ApiCandidateCandidate extends Struct.CollectionTypeSchema {
     privateNotes: Schema.Attribute.Text;
     profileImage: Schema.Attribute.Media<'images'>;
     publishedAt: Schema.Attribute.DateTime;
+    recruitlyId: Schema.Attribute.String & Schema.Attribute.Unique;
     referenceNumber: Schema.Attribute.String & Schema.Attribute.Unique;
     seasonalStatusList: Schema.Attribute.String;
     shortSummary: Schema.Attribute.Text;
@@ -640,6 +642,7 @@ export interface ApiClientClient extends Struct.CollectionTypeSchema {
     >;
     privateNote: Schema.Attribute.Text;
     publishedAt: Schema.Attribute.DateTime;
+    recruitlyCompanyId: Schema.Attribute.String & Schema.Attribute.Unique;
     shortDescription: Schema.Attribute.Text;
     statusList: Schema.Attribute.String;
     type: Schema.Attribute.String & Schema.Attribute.DefaultTo<'client'>;
@@ -748,6 +751,7 @@ export interface ApiJobJob extends Struct.CollectionTypeSchema {
       Schema.Attribute.Private;
     location: Schema.Attribute.String;
     publishedAt: Schema.Attribute.DateTime;
+    recruitlyJobId: Schema.Attribute.String & Schema.Attribute.Unique;
     referenceNo: Schema.Attribute.String;
     shortDescription: Schema.Attribute.Text;
     showToCandidateList: Schema.Attribute.String;

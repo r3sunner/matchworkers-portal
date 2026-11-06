@@ -93,6 +93,10 @@
       "relation": "oneToMany",
       "target": "api::client-notification.client-notification",
       "mappedBy": "client"
+    },
+    "recruitlyCompanyId": {
+      "type": "string",
+      "unique": true
     }
   }
 }
