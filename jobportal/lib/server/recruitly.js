@@ -142,6 +142,31 @@ export function getCandidate(candidateId, { counter } = {}) {
     return recruitlyRequest("GET", `/api/candidate/${encodeId(candidateId, "candidateId")}`, { counter });
 }
 
+// Every placement, 100 per page (Recruitly's cap; it has no job or candidate
+// filter). Call only when a job has a Placed entry: about 8 calls today.
+const PLACEMENT_PAGE_SIZE = 100;
+const MAX_PLACEMENT_PAGES = 50;
+
+export async function listAllPlacements({ counter } = {}) {
+    const placements = [];
+    let total = 0;
+
+    for (let page = 0; page < MAX_PLACEMENT_PAGES; page += 1) {
+        const json = await recruitlyRequest("GET", "/api/nova/placements/list", {
+            params: { page, size: PLACEMENT_PAGE_SIZE },
+            counter,
+        });
+        const rows = Array.isArray(json?.data) ? json.data : [];
+
+        total = Number(json?.total) || 0;
+        placements.push(...rows);
+
+        if (rows.length === 0 || placements.length >= total) break;
+    }
+
+    return { placements, total, complete: placements.length >= total };
+}
+
 // Stage, placement status, employment type and gender lists (id + name).
 // Recruitly wraps this response in `data`.
 export async function getMasterdata({ counter } = {}) {

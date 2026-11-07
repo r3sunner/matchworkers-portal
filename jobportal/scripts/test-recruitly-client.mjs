@@ -135,6 +135,26 @@ test("pipeline reports incomplete when Recruitly sends fewer than its total", as
     assert.equal(result.complete, false);
 });
 
+test("placements are read 100 at a time until the total", async () => {
+    const total = 250;
+    nextResponse = () => {
+        const url = new URL(sent.at(-1).url);
+        const page = Number(url.searchParams.get("page"));
+        const size = Number(url.searchParams.get("size"));
+        const count = Math.max(0, Math.min(size, total - page * size));
+        const data = Array.from({ length: count }, (_, i) => ({ id: `pl${page * size + i}` }));
+        return new Response(JSON.stringify({ data, page, size, total }), { status: 200 });
+    };
+
+    const counter = recruitly.createCallCounter();
+    const result = await recruitly.listAllPlacements({ counter });
+
+    assert.equal(result.placements.length, 250);
+    assert.equal(result.complete, true);
+    assert.equal(counter.calls, 3);
+    assert.deepEqual(sent.map((s) => new URL(s.url).searchParams.get("size")), ["100", "100", "100"]);
+});
+
 test("empty body (unknown id) returns null instead of failing", async () => {
     nextResponse = () => new Response("", { status: 200 });
     assert.equal(await recruitly.getCandidate("no-such-id"), null);

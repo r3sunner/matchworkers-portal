@@ -1,9 +1,16 @@
 // GET /api/recruitly/jobs/<jobId>/pipeline/ – staff only.
-// Pipeline for one Recruitly job, every entry, rejected entries removed (R1).
-// One Recruitly call.
+// Pipeline for one Recruitly job, rejected entries removed (R1), each entry
+// with the portal stage it would get (Q7). One Recruitly call, plus the
+// placement list only when the job has a Placed entry.
 import { NextResponse } from "next/server";
 import { verifyStaffSession } from "@/lib/server/requireStaffSession";
-import { RecruitlyError, createCallCounter, listAllJobPipeline } from "@/lib/server/recruitly";
+import {
+    RecruitlyError,
+    createCallCounter,
+    listAllJobPipeline,
+    listAllPlacements,
+} from "@/lib/server/recruitly";
+import { ACTION, mapPipelineEntry, placementStatusFor } from "@/lib/server/recruitlyStages";
 
 export const runtime = "nodejs";
 
@@ -20,22 +27,44 @@ export async function GET(req, { params }) {
         const { entries: rows, total: recruitlyTotal, complete } = await listAllJobPipeline(jobId, { counter });
         const active = rows.filter((entry) => entry?.rejected !== true);
 
-        const entries = active.map((entry) => ({
-            pipelineId: entry?.id ?? null,
-            candidateId: entry?.candidateId ?? null,
-            candidateName: entry?.candidateName ?? "",
-            status: entry?.status ?? "",
-            stage: entry?.stage ?? "",
-            createdOn: entry?.createdOn ?? null,
-        }));
+        const hasPlaced = active.some((entry) => String(entry?.status || "").toUpperCase() === "PLACED");
+        const placementList = hasPlaced ? await listAllPlacements({ counter }) : null;
+
+        const entries = active.map((entry) => {
+            const placementStatus = placementList
+                ? placementStatusFor(placementList.placements, entry?.candidateId, entry?.jobId || jobId)
+                : null;
+            const mapped = mapPipelineEntry(entry, { placementStatus });
+
+            return {
+                pipelineId: entry?.id ?? null,
+                candidateId: entry?.candidateId ?? null,
+                candidateName: entry?.candidateName ?? "",
+                status: entry?.status ?? "",
+                stage: entry?.stage ?? "",
+                createdOn: entry?.createdOn ?? null,
+                placementStatus,
+                action: mapped.action,
+                portalStage: mapped.portalStage,
+                reason: mapped.reason,
+            };
+        });
+
+        const count = (action) => entries.filter((e) => e.action === action).length;
 
         return NextResponse.json({
             ok: true,
             jobId,
             complete,
+            placementsComplete: placementList ? placementList.complete : null,
             recruitlyTotal,
             total: entries.length,
             rejectedHidden: rows.length - active.length,
+            summary: {
+                show: count(ACTION.SHOW),
+                hide: count(ACTION.HIDE),
+                remove: count(ACTION.REMOVE),
+            },
             entries,
             recruitlyCalls: counter.calls,
         });
