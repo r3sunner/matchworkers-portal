@@ -65,6 +65,11 @@ function getMenuLinksByRole(role, userDocumentId) {
                 icon: "jobs",
             },
             {
+                label: "Recruitly Import",
+                href: "/staff/recruitly-import/",
+                icon: "import",
+            },
+            {
                 label: "My Profile",
                 href: "/staff/profile",
                 icon: "profile",
@@ -294,6 +299,16 @@ function MenuIcon({
             <svg {...commonProps}>
                 <path d="M3 6.5A2.5 2.5 0 0 1 5.5 4H10l2 2h6.5A2.5 2.5 0 0 1 21 8.5v8A3.5 3.5 0 0 1 17.5 20h-11A3.5 3.5 0 0 1 3 16.5z" />
                 <path d="M3 9h18" />
+            </svg>
+        );
+    }
+
+    if (name === "import") {
+        return (
+            <svg {...commonProps}>
+                <path d="M12 3v12" />
+                <path d="M7 10l5 5 5-5" />
+                <path d="M4 17v1.5A2.5 2.5 0 0 0 6.5 21h11a2.5 2.5 0 0 0 2.5-2.5V17" />
             </svg>
         );
     }
