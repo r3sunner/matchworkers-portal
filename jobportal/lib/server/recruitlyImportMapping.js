@@ -281,7 +281,9 @@ export function parseYears(value) {
     return Number.isFinite(n) && n >= 0 && n < 80 ? n : null;
 }
 
-// candidate = toImportCandidate(profile) plus email/mobile. Returns the portal
+// candidate = toImportCandidate(profile). Email and mobile are never copied
+// (agreed field mapping: no contact details); they are only compared to find
+// the same person already in the portal. Returns the portal
 // fields to write (empty values left out, so an update never blanks a field
 // staff filled in) and notes for the import report.
 export function toPortalCandidate(candidate) {
@@ -298,7 +300,6 @@ export function toPortalCandidate(candidate) {
         fullName: text(candidate?.fullName),
         firstName: text(candidate?.firstName),
         lastName: text(candidate?.lastName),
-        mobile: text(candidate?.mobile),
         genderList: gender.value,
         nationalityList: nationality.value,
         shortSummary: htmlToText(candidate?.overview),

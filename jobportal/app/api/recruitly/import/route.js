@@ -55,18 +55,18 @@ async function findCandidates(filters) {
 }
 
 // Returns { kind: "match", candidate, by } | { kind: "review", reason, possible } | { kind: "none" }
-async function findExisting(data, email) {
+async function findExisting(data, { email, mobile }) {
     const steps = [];
     if (data.recruitlyId) steps.push({ by: "Recruitly ID", filters: { recruitlyId: { $eq: data.recruitlyId } } });
     if (data.caNumber) steps.push({ by: "CA number", filters: { caNumber: { $eq: data.caNumber } } });
     if (email) steps.push({ by: "email", filters: { users_permissions_user: { email: { $eqi: email } } } });
 
-    const digits = phoneDigits(data.mobile);
+    const digits = phoneDigits(mobile);
     if (digits.length >= 7) {
         steps.push({
             by: "mobile",
             filters: { mobile: { $contains: digits.slice(-4) } },
-            keep: (c) => samePhone(c?.mobile, data.mobile),
+            keep: (c) => samePhone(c?.mobile, mobile),
         });
     }
 
@@ -156,7 +156,7 @@ async function importOne({ candidateId, entry, mapped, profile, roleCache }) {
 
     if (!data.recruitlyId) return { ...base, outcome: "skipped", reason: "Recruitly record has no ID" };
 
-    const match = await findExisting(data, normalizeEmail(source.email));
+    const match = await findExisting(data, { email: normalizeEmail(source.email), mobile: source.mobile });
     if (match.kind === "review") {
         return { ...base, outcome: "review", reason: match.reason, possibleMatches: match.possible };
     }

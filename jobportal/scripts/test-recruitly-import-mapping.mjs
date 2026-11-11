@@ -90,7 +90,8 @@ test("portal fields: empty values left out so an update never blanks staff data"
         overview: "<p>Hard worker</p>",
         yearsOfExperience: "",
         workingVideoLink: "",
-        mobile: "",
+        mobile: "+91 98765 43210",
+        email: "someone@example.test",
     });
     assert.deepEqual(data, {
         recruitlyId: "abc123",
@@ -104,4 +105,5 @@ test("portal fields: empty values left out so an update never blanks staff data"
     });
     assert.deepEqual(notes, []);
     assert.ok(!("referenceNumber" in data), "import never writes CAN_ references");
+    assert.ok(!("mobile" in data) && !("email" in data), "contact details are compared, never copied");
 });
