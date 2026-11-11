@@ -120,6 +120,96 @@ export function listJobs({ page, size, counter } = {}) {
     });
 }
 
+// Short in-memory cache for the two big lists that have no filter in Recruitly
+// (all jobs; all placements, 8+ calls). Saves time and daily calls when staff
+// load candidates and then import. `fresh: true` (Reload from Recruitly) skips it.
+const LIST_CACHE_MS = 5 * 60 * 1000;
+// Kept on globalThis: Next.js bundles each route separately, and a plain module
+// variable would give every route its own copy.
+const listCache = (globalThis.__recruitlyListCache ??= new Map());
+
+async function cachedList(key, load, { fresh = false } = {}) {
+    const hit = listCache.get(key);
+    if (!fresh && hit && Date.now() - hit.at < LIST_CACHE_MS) return hit.value;
+
+    const value = load();
+    listCache.set(key, { at: Date.now(), value });
+    try {
+        return await value;
+    } catch (error) {
+        listCache.delete(key);
+        throw error;
+    }
+}
+
+export function listJobsCached({ counter, fresh } = {}) {
+    return cachedList("jobs", () => listJobs({ counter }), { fresh });
+}
+
+export function listAllPlacementsCached({ counter, fresh } = {}) {
+    return cachedList("placements", () => listAllPlacements({ counter }), { fresh });
+}
+
+// Placements for the Placed entries of one job, as fast as Recruitly allows
+// (it has no job filter). Newest placements come first, so page 0 usually holds
+// them: then 1 call. Otherwise the remaining pages are read 4 at a time and the
+// full list is cached. Returns { placements, complete } like listAllPlacements.
+export async function placementsForJob(entries, jobId, { counter, fresh = false } = {}) {
+    const wanted = new Set(
+        (entries || [])
+            .filter((e) => e?.rejected !== true && String(e?.status || "").toUpperCase() === "PLACED")
+            .map((e) => `${e?.candidateId}|${e?.jobId || jobId}`)
+    );
+    if (wanted.size === 0) return null;
+
+    const hit = listCache.get("placements");
+    if (!fresh && hit && Date.now() - hit.at < LIST_CACHE_MS) return hit.value;
+
+    const keyOf = (p) => `${p?.candidateId}|${p?.jobId}`;
+    const first = await recruitlyRequest("GET", "/api/nova/placements/list", {
+        params: { page: 0, size: PLACEMENT_PAGE_SIZE },
+        counter,
+    });
+    const firstRows = Array.isArray(first?.data) ? first.data : [];
+    const total = Number(first?.total) || firstRows.length;
+
+    const found = new Set(firstRows.map(keyOf).filter((k) => wanted.has(k)));
+    if (found.size === wanted.size || firstRows.length >= total) {
+        return { placements: firstRows, total, complete: true };
+    }
+
+    const pageCount = Math.min(Math.ceil(total / PLACEMENT_PAGE_SIZE), MAX_PLACEMENT_PAGES);
+    const rest = await mapLimit(
+        Array.from({ length: pageCount - 1 }, (_, i) => i + 1),
+        4,
+        async (page) => {
+            const json = await recruitlyRequest("GET", "/api/nova/placements/list", {
+                params: { page, size: PLACEMENT_PAGE_SIZE },
+                counter,
+            });
+            return Array.isArray(json?.data) ? json.data : [];
+        }
+    );
+    const placements = [...firstRows, ...rest.flat()];
+    const value = { placements, total, complete: placements.length >= total };
+    listCache.set("placements", { at: Date.now(), value: Promise.resolve(value) });
+    return value;
+}
+
+// Runs fn over items, at most `limit` at a time, keeping the order.
+export async function mapLimit(items, limit, fn) {
+    const out = new Array(items.length);
+    let next = 0;
+    async function worker() {
+        while (next < items.length) {
+            const i = next++;
+            out[i] = await fn(items[i], i);
+        }
+    }
+    await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+    return out;
+}
+
 export function getJob(jobId, { counter } = {}) {
     return recruitlyRequest("GET", `/api/nova/jobs/${encodeId(jobId, "jobId")}`, { counter });
 }
@@ -204,6 +294,10 @@ export function toImportCandidate(profile) {
         jobTitle: profile?.jobTitle || "",
         gender: String(profile?.gender || "").trim(),
         nationalities: nameList(profile?.nationalities),
+        nationalityCodes: nameList(profile?.nationalityCodes),
+        // Used only to find the same person already in the portal (no duplicates).
+        email: String(profile?.email || "").trim(),
+        mobile: String(profile?.mobile || "").trim(),
         overview: profile?.overview || "",
         yearsOfExperience: customFieldValue(profile, CUSTOM_FIELD_YEARS_OF_EXPERIENCE),
         workingVideoLink: customFieldValue(profile, CUSTOM_FIELD_WORKING_VIDEO_LINK),

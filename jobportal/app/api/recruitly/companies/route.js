@@ -3,7 +3,7 @@
 // no separate company call here). One Recruitly call.
 import { NextResponse } from "next/server";
 import { verifyStaffSession } from "@/lib/server/requireStaffSession";
-import { RecruitlyError, createCallCounter, listJobs } from "@/lib/server/recruitly";
+import { RecruitlyError, createCallCounter, listJobsCached } from "@/lib/server/recruitly";
 
 export const runtime = "nodejs";
 
@@ -16,7 +16,7 @@ export async function GET() {
     const counter = createCallCounter();
 
     try {
-        const json = await listJobs({ counter });
+        const json = await listJobsCached({ counter });
         const byId = new Map();
 
         for (const job of Array.isArray(json?.data) ? json.data : []) {

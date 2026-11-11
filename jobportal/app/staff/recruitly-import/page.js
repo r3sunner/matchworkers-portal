@@ -103,7 +103,7 @@ function FieldLabel({ step, children, done }) {
     );
 }
 
-function Modal({ title, children, onClose, busy }) {
+function Modal({ title, children, onClose, busy, wide = false }) {
     useEffect(() => {
         function onKey(e) {
             if (e.key === "Escape" && !busy) onClose();
@@ -123,7 +123,7 @@ function Modal({ title, children, onClose, busy }) {
             }}
         >
             <div className="absolute inset-0 bg-black/50" />
-            <div className="relative w-full sm:max-w-lg bg-white rounded-t-2xl sm:rounded-2xl shadow-xl p-5 sm:p-6">
+            <div className={cls("relative w-full bg-white rounded-t-2xl sm:rounded-2xl shadow-xl p-5 sm:p-6 max-h-[92vh] overflow-y-auto", wide ? "sm:max-w-3xl" : "sm:max-w-lg")}>
                 <div className="text-lg sm:text-xl text-red-700">{title}</div>
                 <div className="mt-3">{children}</div>
             </div>
@@ -261,6 +261,76 @@ function SearchableSelect({ value, onChange, options, placeholder = "Select", di
     );
 }
 
+const OUTCOME = {
+    created: { label: "Created", style: "bg-green-50 text-green-700 ring-green-200" },
+    updated: { label: "Updated", style: "bg-sky-50 text-sky-700 ring-sky-200" },
+    review: { label: "Needs review", style: "bg-amber-50 text-amber-800 ring-amber-200" },
+    skipped: { label: "Skipped", style: "bg-gray-100 text-gray-600 ring-gray-200" },
+    failed: { label: "Failed", style: "bg-red-50 text-red-700 ring-red-200" },
+};
+
+function ImportResult({ result }) {
+    const s = result?.summary || {};
+    const rows = result?.results || [];
+    return (
+        <div aria-live="polite">
+            <div className="flex flex-wrap gap-2 text-xs">
+                {["created", "updated", "review", "skipped", "failed"].map((k) =>
+                    s[k] ? (
+                        <span key={k} className={cls("rounded-full px-3 py-1 font-medium ring-1", OUTCOME[k].style)}>
+                            {s[k]} {OUTCOME[k].label.toLowerCase()}
+                        </span>
+                    ) : null
+                )}
+            </div>
+            <div className="mt-4 overflow-x-auto rounded-xl border border-gray-200">
+                <table className="min-w-full text-sm">
+                    <thead className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
+                        <tr>
+                            <th className="px-4 py-3 font-semibold">Candidate</th>
+                            <th className="px-3 py-3 font-semibold">Result</th>
+                            <th className="px-3 py-3 font-semibold">Details</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {rows.map((r) => (
+                            <tr key={r.candidateId} className="border-t border-gray-100 align-top">
+                                <td className="px-4 py-3">
+                                    <div className="font-medium text-gray-900">{r.name || r.candidateId}</div>
+                                    {r.reference ? <div className="text-xs text-gray-500">{r.reference}</div> : null}
+                                </td>
+                                <td className="px-3 py-3">
+                                    <span className={cls("inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ring-1", OUTCOME[r.outcome]?.style)}>
+                                        {OUTCOME[r.outcome]?.label || r.outcome}
+                                    </span>
+                                </td>
+                                <td className="px-3 py-3 text-xs text-gray-600">
+                                    {r.outcome === "updated" && r.matchedBy ? <div>Matched existing candidate by {r.matchedBy}</div> : null}
+                                    {r.reason ? <div>{r.reason}</div> : null}
+                                    {(r.possibleMatches || []).map((m) => (
+                                        <div key={m.documentId} className="text-gray-500">
+                                            Possible match: {m.fullName || "(no name)"}
+                                            {m.reference ? ` (${m.reference})` : ""}
+                                        </div>
+                                    ))}
+                                    {(r.notes || []).map((n) => (
+                                        <div key={n} className="text-amber-700">
+                                            {n}
+                                        </div>
+                                    ))}
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+            <p className="mt-3 text-xs text-gray-500">
+                Linking candidates to the portal job with their stage comes in the next step.
+            </p>
+        </div>
+    );
+}
+
 /* ------------------------------------------------------------------ */
 /* Page                                                                */
 /* ------------------------------------------------------------------ */
@@ -288,6 +358,9 @@ export default function RecruitlyImportPage() {
     const [loadingPipeline, setLoadingPipeline] = useState(false);
     const [pipelineError, setPipelineError] = useState("");
     const [selected, setSelected] = useState([]);
+    const [importing, setImporting] = useState(false);
+    const [importResult, setImportResult] = useState(null);
+    const [importError, setImportError] = useState("");
 
     const setupRequest = useRef(0);
     const jobsRequest = useRef(0);
@@ -386,6 +459,8 @@ export default function RecruitlyImportPage() {
         setSelected([]);
         setPipelineError("");
         setLoadingPipeline(false);
+        setImportResult(null);
+        setImportError("");
     }
 
     const loadJobs = useCallback(async (companyId) => {
@@ -420,14 +495,16 @@ export default function RecruitlyImportPage() {
         loadJobs(next?.recruitlyCompanyId || "");
     }
 
-    async function loadPipeline(nextJobId) {
+    async function loadPipeline(nextJobId, { fresh = false } = {}) {
         resetPipeline();
         if (!nextJobId) return;
 
         const request = pipelineRequest.current;
         setLoadingPipeline(true);
         try {
-            const json = await fetchJson(`/api/recruitly/jobs/${encodeURIComponent(nextJobId)}/pipeline/`);
+            const json = await fetchJson(
+                `/api/recruitly/jobs/${encodeURIComponent(nextJobId)}/pipeline/${fresh ? "?fresh=1" : ""}`
+            );
             if (request === pipelineRequest.current) setPipeline(json);
         } catch (error) {
             if (request === pipelineRequest.current) setPipelineError(error.message);
@@ -498,6 +575,31 @@ export default function RecruitlyImportPage() {
 
     function toggleAll() {
         setSelected(allSelected ? [] : importable.map((e) => e.pipelineId));
+    }
+
+    async function runImport() {
+        const candidateIds = entries
+            .filter((e) => selected.includes(e.pipelineId) && e.action === "show" && e.candidateId)
+            .map((e) => e.candidateId);
+        if (!jobId || candidateIds.length === 0) return;
+
+        setImporting(true);
+        setImportError("");
+        setImportResult(null);
+        try {
+            const json = await fetchJson("/api/recruitly/import/", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ jobId, candidateIds }),
+            });
+            setImportResult(json);
+            setSelected([]);
+        } catch (error) {
+            setImportError(error.message);
+        } finally {
+            setImporting(false);
+            setConfirm({ kind: "result" });
+        }
     }
 
     const isLinked = Boolean(client?.recruitlyCompanyId);
@@ -691,7 +793,7 @@ export default function RecruitlyImportPage() {
                             </div>
                             <button
                                 type="button"
-                                onClick={() => loadPipeline(jobId)}
+                                onClick={() => loadPipeline(jobId, { fresh: true })}
                                 disabled={loadingPipeline}
                                 className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                             >
@@ -833,15 +935,15 @@ export default function RecruitlyImportPage() {
                                         </div>
                                         <div className="flex items-center gap-3">
                                             <span className="hidden text-xs text-gray-500 sm:inline">
-                                                Import is being built and will be enabled next.
+                                                Existing portal candidates are updated, never duplicated.
                                             </span>
                                             <button
                                                 type="button"
-                                                disabled
-                                                aria-disabled="true"
-                                                className="cursor-not-allowed rounded-lg bg-gray-200 px-5 py-2 text-sm font-medium text-gray-500"
+                                                disabled={selected.length === 0 || importing}
+                                                onClick={() => setConfirm({ kind: "import" })}
+                                                className="rounded-lg bg-red-700 px-5 py-2 text-sm font-medium text-white hover:bg-red-800 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-500"
                                             >
-                                                Import selected
+                                                {importing ? "Importing…" : "Import selected"}
                                             </button>
                                         </div>
                                     </div>
@@ -850,6 +952,7 @@ export default function RecruitlyImportPage() {
                         ) : null}
                     </section>
                 ) : null}
+
             </div>
 
             {/* ---------------- Confirm dialogs ---------------- */}
@@ -880,6 +983,71 @@ export default function RecruitlyImportPage() {
                             className="rounded-lg bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-800 disabled:opacity-60"
                         >
                             {savingLink ? "Linking…" : "Link company"}
+                        </button>
+                    </div>
+                </Modal>
+            ) : null}
+
+            {confirm?.kind === "import" && job ? (
+                <Modal title="Import candidates" onClose={() => setConfirm(null)} busy={importing}>
+                    <p className="text-sm text-gray-700">
+                        Import <span className="font-semibold">{selected.length}</span>{" "}
+                        {selected.length === 1 ? "candidate" : "candidates"} from{" "}
+                        <span className="font-semibold">
+                            {job.reference} – {job.title}
+                        </span>{" "}
+                        into the portal?
+                    </p>
+                    <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-gray-600">
+                        <li>Candidates already in the portal are updated, never added twice.</li>
+                        <li>If a match is uncertain, the candidate is not imported and is listed for review.</li>
+                        <li>Nothing changes in Recruitly.</li>
+                    </ul>
+                    <div className="mt-5 flex justify-end gap-2">
+                        <button
+                            type="button"
+                            disabled={importing}
+                            onClick={() => setConfirm(null)}
+                            className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="button"
+                            disabled={importing}
+                            onClick={runImport}
+                            className="rounded-lg bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-800 disabled:opacity-60"
+                        >
+                            {importing ? "Importing…" : "Import"}
+                        </button>
+                    </div>
+                </Modal>
+            ) : null}
+
+            {confirm?.kind === "result" ? (
+                <Modal
+                    title={importError ? "Import failed" : "Import result"}
+                    wide
+                    onClose={() => {
+                        setConfirm(null);
+                        setImportResult(null);
+                        setImportError("");
+                    }}
+                >
+                    {importError ? <ErrorBox message={importError} /> : null}
+                    {importResult ? <ImportResult result={importResult} /> : null}
+                    <div className="mt-5 flex justify-end">
+                        <button
+                            type="button"
+                            autoFocus
+                            onClick={() => {
+                                setConfirm(null);
+                                setImportResult(null);
+                                setImportError("");
+                            }}
+                            className="rounded-lg bg-red-700 px-5 py-2 text-sm font-medium text-white hover:bg-red-800"
+                        >
+                            Close
                         </button>
                     </div>
                 </Modal>

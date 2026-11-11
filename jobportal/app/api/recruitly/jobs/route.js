@@ -2,7 +2,7 @@
 // Recruitly jobs for the import screen (R1). One Recruitly call.
 import { NextResponse } from "next/server";
 import { verifyStaffSession } from "@/lib/server/requireStaffSession";
-import { RecruitlyError, createCallCounter, listJobs } from "@/lib/server/recruitly";
+import { RecruitlyError, createCallCounter, listJobsCached } from "@/lib/server/recruitly";
 
 export const runtime = "nodejs";
 
@@ -17,7 +17,8 @@ export async function GET(req) {
     const counter = createCallCounter();
 
     try {
-        const json = await listJobs({ counter });
+        const fresh = req.nextUrl.searchParams.get("fresh") === "1";
+        const json = await listJobsCached({ counter, fresh });
         const rows = Array.isArray(json?.data) ? json.data : [];
 
         const jobs = rows

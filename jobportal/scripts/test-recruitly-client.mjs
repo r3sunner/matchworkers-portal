@@ -170,6 +170,9 @@ test("candidate mapping keeps only the import fields, custom fields by ID", () =
         jobTitle: "Cleaner",
         gender: "Male",
         nationalities: ["Indian", { name: "Nepalese" }, ""],
+        nationalityCodes: ["IN", "NP"],
+        email: " test.one@example.test ",
+        mobile: "+91 98765 43210",
         overview: "Summary",
         dateOfBirth: "01/01/1990",
         niNumber: "AB123456C",
@@ -190,6 +193,9 @@ test("candidate mapping keeps only the import fields, custom fields by ID", () =
         jobTitle: "Cleaner",
         gender: "Male",
         nationalities: ["Indian", "Nepalese"],
+        nationalityCodes: ["IN", "NP"],
+        email: "test.one@example.test",
+        mobile: "+91 98765 43210",
         overview: "Summary",
         yearsOfExperience: "4",
         workingVideoLink: "https://video",
@@ -209,4 +215,65 @@ test("latest file per category uses the dd/mm/yyyy upload date", () => {
 
     assert.equal(latest.fullCandidateProfile.id, "new");
     assert.equal(latest.photo, null);
+});
+
+// ---- Placements for one job (speed: stop early, else parallel + cache) ----
+
+function placementPages(total, wantedOnPage, wanted) {
+    return () => {
+        const url = new URL(sent[sent.length - 1].url);
+        const page = Number(url.searchParams.get("page"));
+        const rows = Array.from({ length: Math.min(100, total - page * 100) }, (_, i) => ({
+            candidateId: `other-${page}-${i}`,
+            jobId: "other-job",
+            statusName: "Ended",
+        }));
+        if (page === wantedOnPage) rows[0] = { ...wanted };
+        return new Response(JSON.stringify({ data: rows, total }), { status: 200 });
+    };
+}
+
+const PLACED_ENTRY = [{ candidateId: "c-placed", jobId: "job-1", status: "PLACED", rejected: false }];
+const WANTED = { candidateId: "c-placed", jobId: "job-1", statusName: "Landed - Working with our client" };
+
+test("placementsForJob: no Placed entry → no Recruitly call", async () => {
+    globalThis.__recruitlyListCache?.clear();
+    const result = await recruitly.placementsForJob([{ candidateId: "x", status: "CV_SENT" }], "job-1");
+    assert.equal(result, null);
+    assert.equal(sent.length, 0);
+});
+
+test("placementsForJob: placement on the first page → 1 call only", async () => {
+    globalThis.__recruitlyListCache?.clear();
+    nextResponse = placementPages(751, 0, WANTED);
+    const result = await recruitly.placementsForJob(PLACED_ENTRY, "job-1");
+    assert.equal(sent.length, 1);
+    assert.ok(result.placements.some((p) => p.candidateId === "c-placed" && p.statusName === WANTED.statusName));
+});
+
+test("placementsForJob: placement on a later page → reads all pages, then cached; fresh reads again", async () => {
+    globalThis.__recruitlyListCache?.clear();
+    nextResponse = placementPages(751, 6, WANTED);
+    const result = await recruitly.placementsForJob(PLACED_ENTRY, "job-1");
+    assert.equal(sent.length, 8, "page 0 + 7 more pages");
+    assert.equal(result.placements.length, 751);
+    assert.equal(result.complete, true);
+    assert.ok(result.placements.some((p) => p.candidateId === "c-placed"));
+    const pages = sent.map((s) => Number(new URL(s.url).searchParams.get("page"))).sort((a, b) => a - b);
+    assert.deepEqual(pages, [0, 1, 2, 3, 4, 5, 6, 7]);
+
+    sent = [];
+    await recruitly.placementsForJob(PLACED_ENTRY, "job-1");
+    assert.equal(sent.length, 0, "second load within 5 minutes uses the cache");
+
+    await recruitly.placementsForJob(PLACED_ENTRY, "job-1", { fresh: true });
+    assert.ok(sent.length >= 1, "Reload from Recruitly skips the cache");
+});
+
+test("placementsForJob: Placed with no placement record at all → full list read, nothing found", async () => {
+    globalThis.__recruitlyListCache?.clear();
+    nextResponse = placementPages(250, -1, WANTED);
+    const result = await recruitly.placementsForJob(PLACED_ENTRY, "job-1");
+    assert.equal(sent.length, 3);
+    assert.ok(!result.placements.some((p) => p.candidateId === "c-placed"));
 });

@@ -8,7 +8,7 @@ import {
     RecruitlyError,
     createCallCounter,
     listAllJobPipeline,
-    listAllPlacements,
+    placementsForJob,
 } from "@/lib/server/recruitly";
 import { ACTION, mapPipelineEntry, placementStatusFor } from "@/lib/server/recruitlyStages";
 
@@ -27,8 +27,8 @@ export async function GET(req, { params }) {
         const { entries: rows, total: recruitlyTotal, complete } = await listAllJobPipeline(jobId, { counter });
         const active = rows.filter((entry) => entry?.rejected !== true);
 
-        const hasPlaced = active.some((entry) => String(entry?.status || "").toUpperCase() === "PLACED");
-        const placementList = hasPlaced ? await listAllPlacements({ counter }) : null;
+        const fresh = req.nextUrl.searchParams.get("fresh") === "1";
+        const placementList = await placementsForJob(active, jobId, { counter, fresh });
 
         const entries = active.map((entry) => {
             const placementStatus = placementList
