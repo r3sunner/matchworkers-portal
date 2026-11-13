@@ -277,3 +277,41 @@ test("placementsForJob: Placed with no placement record at all → full list rea
     assert.equal(sent.length, 3);
     assert.ok(!result.placements.some((p) => p.candidateId === "c-placed"));
 });
+
+// ---- One retry for dropped connections / brief outages ----
+
+test("a dropped connection is retried once, then succeeds", async () => {
+    let n = 0;
+    nextResponse = () => {
+        n += 1;
+        if (n === 1) throw new TypeError("fetch failed");
+        return new Response(JSON.stringify({ data: [{ id: "j1" }] }), { status: 200 });
+    };
+    const counter = recruitly.createCallCounter();
+    const json = await recruitly.recruitlyRequest("GET", "/api/nova/jobs/list", { counter });
+    assert.equal(json.data[0].id, "j1");
+    assert.equal(sent.length, 2);
+    assert.equal(counter.calls, 2, "both attempts count toward the daily limit");
+});
+
+test("503 is retried once; 429 (daily limit) and 404 are not", async () => {
+    let n = 0;
+    nextResponse = () => (++n === 1 ? new Response("", { status: 503 }) : new Response(JSON.stringify({ ok: 1 }), { status: 200 }));
+    assert.deepEqual(await recruitly.recruitlyRequest("GET", "/api/nova/jobs/list"), { ok: 1 });
+    assert.equal(sent.length, 2);
+
+    for (const status of [429, 404, 500]) {
+        sent = [];
+        nextResponse = () => new Response("", { status });
+        await assert.rejects(recruitly.recruitlyRequest("GET", "/api/nova/jobs/list"), recruitly.RecruitlyError);
+        assert.equal(sent.length, 1, `${status} must not be retried`);
+    }
+});
+
+test("two dropped connections in a row give a clear error", async () => {
+    nextResponse = () => {
+        throw new TypeError("fetch failed");
+    };
+    await assert.rejects(recruitly.recruitlyRequest("GET", "/api/nova/jobs/list"), /Recruitly request failed/);
+    assert.equal(sent.length, 2);
+});

@@ -267,6 +267,7 @@ const OUTCOME = {
     review: { label: "Needs review", style: "bg-amber-50 text-amber-800 ring-amber-200" },
     skipped: { label: "Skipped", style: "bg-gray-100 text-gray-600 ring-gray-200" },
     failed: { label: "Failed", style: "bg-red-50 text-red-700 ring-red-200" },
+    removed: { label: "Taken off job", style: "bg-gray-100 text-gray-700 ring-gray-300" },
 };
 
 function ImportResult({ result }) {
@@ -274,8 +275,14 @@ function ImportResult({ result }) {
     const rows = result?.results || [];
     return (
         <div aria-live="polite">
+            {result?.job ? (
+                <p className="mb-3 text-sm text-gray-700">
+                    Portal job <span className="font-semibold">{result.job.referenceNo || result.job.title}</span>{" "}
+                    {result.job.created ? "was created for this client." : "was updated."}
+                </p>
+            ) : null}
             <div className="flex flex-wrap gap-2 text-xs">
-                {["created", "updated", "review", "skipped", "failed"].map((k) =>
+                {["created", "updated", "removed", "review", "skipped", "failed"].map((k) =>
                     s[k] ? (
                         <span key={k} className={cls("rounded-full px-3 py-1 font-medium ring-1", OUTCOME[k].style)}>
                             {s[k]} {OUTCOME[k].label.toLowerCase()}
@@ -306,6 +313,7 @@ function ImportResult({ result }) {
                                 </td>
                                 <td className="px-3 py-3 text-xs text-gray-600">
                                     {r.outcome === "updated" && r.matchedBy ? <div>Matched existing candidate by {r.matchedBy}</div> : null}
+                                    {r.stageNote ? <div className="text-gray-800">{r.stageNote}</div> : null}
                                     {r.reason ? <div>{r.reason}</div> : null}
                                     {(r.possibleMatches || []).map((m) => (
                                         <div key={m.documentId} className="text-gray-500">
@@ -324,9 +332,7 @@ function ImportResult({ result }) {
                     </tbody>
                 </table>
             </div>
-            <p className="mt-3 text-xs text-gray-500">
-                Linking candidates to the portal job with their stage comes in the next step.
-            </p>
+            
         </div>
     );
 }
@@ -590,7 +596,7 @@ export default function RecruitlyImportPage() {
             const json = await fetchJson("/api/recruitly/import/", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ jobId, candidateIds }),
+                body: JSON.stringify({ jobId, clientDocumentId, candidateIds }),
             });
             setImportResult(json);
             setSelected([]);

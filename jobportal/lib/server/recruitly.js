@@ -7,6 +7,7 @@
 
 const RECRUITLY_BASE_URL = (process.env.RECRUITLY_BASE_URL || "https://api.recruitly.io").replace(/\/+$/, "");
 const REQUEST_TIMEOUT_MS = 20000;
+const RETRY_DELAY_MS = 600;
 
 // R2: the only file categories the portal may pull, by Recruitly category ID.
 // Never add passport, ID or "Birth Certificate and candidate photo" categories.
@@ -78,24 +79,36 @@ export async function recruitlyRequest(method, path, { params, counter, binary =
     }
 
     const url = buildUrl(path, params);
-    const startedAt = Date.now();
 
-    if (counter) counter.calls += 1;
-
+    // One retry for a dropped connection or a brief Recruitly outage (502/503/504).
+    // GET only, so repeating is safe. 429 (daily limit) and other errors are not retried.
     let res;
-    try {
-        res = await fetch(url, {
-            method: "GET",
-            headers: { Accept: binary ? "*/*" : "application/json" },
-            cache: "no-store",
-            signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-        });
-    } catch (error) {
-        console.error(`[RECRUITLY] GET ${path} failed after ${Date.now() - startedAt}ms:`, error?.name || "Error");
-        throw new RecruitlyError(`Recruitly request failed: GET ${path}.`, { path });
-    }
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+        if (counter) counter.calls += 1;
+        const startedAt = Date.now();
+        try {
+            res = await fetch(url, {
+                method: "GET",
+                headers: { Accept: binary ? "*/*" : "application/json" },
+                cache: "no-store",
+                signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+            });
+        } catch (error) {
+            console.error(`[RECRUITLY] GET ${path} failed after ${Date.now() - startedAt}ms:`, error?.name || "Error");
+            if (attempt === 1) {
+                await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+                continue;
+            }
+            throw new RecruitlyError(`Recruitly request failed: GET ${path}.`, { path });
+        }
 
-    console.log(`[RECRUITLY] GET ${path} ${res.status} ${Date.now() - startedAt}ms`);
+        console.log(`[RECRUITLY] GET ${path} ${res.status} ${Date.now() - startedAt}ms`);
+        if (attempt === 1 && [502, 503, 504].includes(res.status)) {
+            await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+            continue;
+        }
+        break;
+    }
 
     if (!res.ok) {
         throw new RecruitlyError(`Recruitly returned ${res.status} for GET ${path}.`, { status: res.status, path });
