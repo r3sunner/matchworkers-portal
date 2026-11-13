@@ -15,8 +15,9 @@ import {
 
 const PIPELINES = [
     { value: "Suggested Candidate", label: "Suggested Candidate" },
-    // { value: "Shortlisted Candidate", label: "Shortlisted Candidate" },
+    { value: "Shortlisted Candidate", label: "Shortlisted Candidate" },
     { value: "Requested Interview", label: "Requested Interview" },
+    { value: "Interviewed", label: "Interviewed" },
     { value: "Hired Candidate", label: "Offered Candidate" },
     { value: "Immigration", label: "Immigration" },
     { value: "Placed", label: "Placed" },

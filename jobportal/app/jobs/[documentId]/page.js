@@ -102,6 +102,7 @@ function normalizeProcessLabel(to) {
         suggested: labels[0] || "Suggested Candidate",
         shortlisted: labels[1] || "Shortlisted Candidate",
         interview: labels[2] || "Requested Interview",
+        interviewed: "Interviewed",
         hired: labels[3] || "Hired Candidate",
         immigration: "Immigration",
         placed: "Placed",
@@ -122,6 +123,7 @@ function processKeyFromLabel(v) {
 
     if (x === "shortlisted candidate") return "shortlisted";
     if (x === "requested interview") return "interview";
+    if (x === "interviewed") return "interviewed";
     if (x === "hired candidate") return "hired";
     if (x === "immigration") return "immigration";
     if (x === "placed") return "placed";
@@ -388,6 +390,8 @@ function StageBadge({ value }) {
                     ? "border-red-200 bg-red-50 text-red-700"
                     : v === "requested interview"
                         ? "border-blue-200 bg-blue-50 text-blue-700"
+                        : v === "interviewed"
+                        ? "border-violet-200 bg-violet-50 text-violet-700"
                         : v === "shortlisted candidate"
                             ? "border-purple-200 bg-purple-50 text-purple-700"
                             : "border-gray-200 bg-gray-50 text-gray-700";
@@ -792,6 +796,7 @@ export default function JobCandidatesPage() {
     const [suggestedCandidates, setSuggestedCandidates] = useState([]);
     const [shortlistedCandidates, setShortlistedCandidates] = useState([]);
     const [requestedInterviewCandidates, setRequestedInterviewCandidates] = useState([]);
+    const [interviewedCandidates, setInterviewedCandidates] = useState([]);
     const [hiredCandidates, setHiredCandidates] = useState([]);
 
     const [activeDragCandidate, setActiveDragCandidate] = useState(null);
@@ -821,6 +826,7 @@ export default function JobCandidatesPage() {
     const suggestedRef = useRef(null);
     const shortlistedRef = useRef(null);
     const requestedRef = useRef(null);
+    const interviewedRef = useRef(null);
     const hiredRef = useRef(null);
 
     function scrollToSuggested() {
@@ -844,6 +850,13 @@ export default function JobCandidatesPage() {
         });
     }
 
+    function scrollToInterviewed() {
+        interviewedRef.current?.scrollIntoView({
+            behavior: "smooth",
+            block: "start",
+        });
+    }
+
     function scrollToHired() {
         hiredRef.current?.scrollIntoView({
             behavior: "smooth",
@@ -855,6 +868,7 @@ export default function JobCandidatesPage() {
         if (sectionId === "suggested") return "Suggested Candidate";
         if (sectionId === "shortlisted") return "Shortlisted Candidate";
         if (sectionId === "interview") return "Requested Interview";
+        if (sectionId === "interviewed") return "Interviewed";
         if (sectionId === "hired") return "Hired Candidate";
         return "";
     }
@@ -940,6 +954,7 @@ export default function JobCandidatesPage() {
         setSuggestedCandidates((prev) => updateCandidateInList(prev, candidateDocumentId, patch));
         setShortlistedCandidates((prev) => updateCandidateInList(prev, candidateDocumentId, patch));
         setRequestedInterviewCandidates((prev) => updateCandidateInList(prev, candidateDocumentId, patch));
+        setInterviewedCandidates((prev) => updateCandidateInList(prev, candidateDocumentId, patch));
         setHiredCandidates((prev) => updateCandidateInList(prev, candidateDocumentId, patch));
 
         setSelectedCandidate((prev) =>
@@ -965,6 +980,7 @@ export default function JobCandidatesPage() {
         setSuggestedCandidates((prev) => removeCandidateFromList(prev, candidateDocumentId));
         setShortlistedCandidates((prev) => removeCandidateFromList(prev, candidateDocumentId));
         setRequestedInterviewCandidates((prev) => removeCandidateFromList(prev, candidateDocumentId));
+        setInterviewedCandidates((prev) => removeCandidateFromList(prev, candidateDocumentId));
         setHiredCandidates((prev) => removeCandidateFromList(prev, candidateDocumentId));
 
         if (String(selectedCandidate?.documentId) === String(candidateDocumentId)) {
@@ -1020,6 +1036,7 @@ export default function JobCandidatesPage() {
                 const suggested = withProcess(json?.lists?.suggested || [], "suggested");
                 const shortlisted = withProcess(json?.lists?.shortlisted || [], "shortlisted");
                 const interview = withProcess(json?.lists?.interview || [], "interview");
+                const interviewed = withProcess(json?.lists?.interviewed || [], "interviewed");
 
                 const hiredRaw = withProcess(json?.lists?.hired || [], "hired");
                 const immigrationRaw = withProcess(json?.lists?.immigration || [], "immigration");
@@ -1039,6 +1056,7 @@ export default function JobCandidatesPage() {
                 setSuggestedCandidates(suggested);
                 setShortlistedCandidates(shortlisted);
                 setRequestedInterviewCandidates(interview);
+                setInterviewedCandidates(interviewed);
                 setHiredCandidates(hired);
             } catch (e) {
                 if (!ignore) setJobErr(e?.message || "Failed to load job");
@@ -1071,12 +1089,14 @@ export default function JobCandidatesPage() {
         const oldSuggested = suggestedCandidates;
         const oldShortlisted = shortlistedCandidates;
         const oldInterview = requestedInterviewCandidates;
+        const oldInterviewed = interviewedCandidates;
         const oldHired = hiredCandidates;
         const oldSelected = selectedCandidate;
 
         setSuggestedCandidates((prev) => removeCandidateFromList(prev, candidate.documentId));
         setShortlistedCandidates((prev) => removeCandidateFromList(prev, candidate.documentId));
         setRequestedInterviewCandidates((prev) => removeCandidateFromList(prev, candidate.documentId));
+        setInterviewedCandidates((prev) => removeCandidateFromList(prev, candidate.documentId));
         setHiredCandidates((prev) => removeCandidateFromList(prev, candidate.documentId));
 
         if (toKey === "suggested") {
@@ -1085,6 +1105,8 @@ export default function JobCandidatesPage() {
             setShortlistedCandidates((prev) => upsertCandidateAtTop(prev, movedCandidate));
         } else if (toKey === "interview") {
             setRequestedInterviewCandidates((prev) => upsertCandidateAtTop(prev, movedCandidate));
+        } else if (toKey === "interviewed") {
+            setInterviewedCandidates((prev) => upsertCandidateAtTop(prev, movedCandidate));
         } else if (toKey === "hired" || toKey === "immigration" || toKey === "placed") {
             setHiredCandidates((prev) => upsertCandidateAtTop(prev, movedCandidate));
         }
@@ -1115,6 +1137,7 @@ export default function JobCandidatesPage() {
             setSuggestedCandidates(oldSuggested);
             setShortlistedCandidates(oldShortlisted);
             setRequestedInterviewCandidates(oldInterview);
+            setInterviewedCandidates(oldInterviewed);
             setHiredCandidates(oldHired);
             setSelectedCandidate(oldSelected);
             alert(e?.message || "Failed to update job in Strapi");
@@ -1189,6 +1212,7 @@ export default function JobCandidatesPage() {
         const oldSuggested = suggestedCandidates;
         const oldShortlisted = shortlistedCandidates;
         const oldInterview = requestedInterviewCandidates;
+        const oldInterviewed = interviewedCandidates;
         const oldHired = hiredCandidates;
 
         setRemovingCandidateId(String(candidate.documentId));
@@ -1214,6 +1238,7 @@ export default function JobCandidatesPage() {
             setSuggestedCandidates(oldSuggested);
             setShortlistedCandidates(oldShortlisted);
             setRequestedInterviewCandidates(oldInterview);
+            setInterviewedCandidates(oldInterviewed);
             setHiredCandidates(oldHired);
             closeRemoveConfirmModal();
             alert(e?.message || "Failed to remove candidate");
@@ -1412,7 +1437,7 @@ export default function JobCandidatesPage() {
                             <button
                                 type="button"
                                 onClick={scrollToShortlisted}
-                                className=" hidden rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 transition hover:border-red-600 hover:bg-red-600 hover:text-white"
+                                className="rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 transition hover:border-red-600 hover:bg-red-600 hover:text-white"
                             >
                                 Shortlisted ({shortlistedCandidates.length})
                             </button>
@@ -1423,6 +1448,14 @@ export default function JobCandidatesPage() {
                                 className="rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 transition hover:border-red-600 hover:bg-red-600 hover:text-white"
                             >
                                 Interview ({requestedInterviewCandidates.length})
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={scrollToInterviewed}
+                                className="rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 transition hover:border-red-600 hover:bg-red-600 hover:text-white"
+                            >
+                                Interviewed ({interviewedCandidates.length})
                             </button>
 
                             <button
@@ -1585,7 +1618,7 @@ export default function JobCandidatesPage() {
 
                     {/** hide  shortlisted Icon */}
                     <DropZoneSection id="shortlisted" >
-                        <section ref={shortlistedRef} className=" hidden scroll-mt-24 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+                        <section ref={shortlistedRef} className="scroll-mt-24 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
                             <SectionHeader title="Shortlisted Candidates" count={shortlistedCandidates.length} />
 
                             {shortlistedCandidates.length === 0 ? (
@@ -1621,6 +1654,28 @@ export default function JobCandidatesPage() {
                                             sectionKey="interview"
                                         >
                                             {renderCandidateCard(c, "interview")}
+                                        </DraggableCandidateCard>
+                                    ))}
+                                </div>
+                            )}
+                        </section>
+                    </DropZoneSection>
+
+                    <DropZoneSection id="interviewed">
+                        <section ref={interviewedRef} className="scroll-mt-24 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+                            <SectionHeader title="Interviewed" count={interviewedCandidates.length} />
+
+                            {interviewedCandidates.length === 0 ? (
+                                <EmptySection text="No interviewed candidates yet." />
+                            ) : (
+                                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+                                    {interviewedCandidates.map((c) => (
+                                        <DraggableCandidateCard
+                                            key={c.documentId || c.id}
+                                            candidate={c}
+                                            sectionKey="interviewed"
+                                        >
+                                            {renderCandidateCard(c, "interviewed")}
                                         </DraggableCandidateCard>
                                     ))}
                                 </div>

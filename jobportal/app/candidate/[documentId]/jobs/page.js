@@ -75,6 +75,10 @@ function normalizeStage(value) {
         return "Interview";
     }
 
+    if (v === "interviewed") {
+        return "Interviewed";
+    }
+
     if (v === "hired candidate" || v === "hired") {
         return "Hired";
     }
@@ -147,6 +151,7 @@ function stageProgress(stage) {
         Suggested: 15,
         Shortlisted: 30,
         Interview: 50,
+        Interviewed: 60,
         Hired: 70,
         Immigration: 85,
         Placed: 100,
@@ -190,6 +195,7 @@ function CandidatePipelineBar({ stage }) {
         "Suggested",
         "Shortlisted",
         "Interview",
+        "Interviewed",
         "Hired",
         "Immigration",
         "Placed",
@@ -345,6 +351,7 @@ function CandidateJobsContent({ candidateDocumentId }) {
             Suggested: 0,
             Shortlisted: 0,
             Interview: 0,
+            Interviewed: 0,
             Hired: 0,
             Immigration: 0,
             Placed: 0,
@@ -391,11 +398,12 @@ function CandidateJobsContent({ candidateDocumentId }) {
                             {total === 1 ? "" : "s"} found
                         </div>
 
-                        <div className="grid grid-cols-2 gap-1 sm:grid-cols-6">
+                        <div className="grid grid-cols-2 gap-1 sm:grid-cols-7">
                             {[
                                 "Placed",
                                 "Immigration",
                                 "Hired",
+                                "Interviewed",
                                 "Interview",
                                 "Shortlisted",
                                 "Suggested",

@@ -131,6 +131,10 @@ function normalizeActionText(action) {
         return "Requested Interview";
     }
 
+    if (value === "interviewed") {
+        return "Interviewed";
+    }
+
     if (value === "immigration") {
         return "Immigration";
     }

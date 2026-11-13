@@ -2,26 +2,30 @@
 
 import React from "react";
 
+// Stages as agreed with Matchworkers (Recruitly stage mapping, Nov 2026).
 const STEPS = [
     { label: "Suggested", value: "Suggested Candidate" },
+    { label: "Shortlisted", value: "Shortlisted Candidate" },
     { label: "Interview", value: "Requested Interview" },
+    { label: "Interviewed", value: "Interviewed" },
     { label: "Offered", value: "Hired Candidate" },
     { label: "Immigration", value: "Immigration" },
     { label: "Placed", value: "Placed" },
 ];
 
+const EDGE = 50 / STEPS.length; // % from each side to the centre of the outer steps
+
 function stepIndex(status) {
     const s = String(status || "").toLowerCase();
 
     if (s.includes("suggest")) return 0;
-
-    // Shortlisted is hidden from the UI and treated as Suggested.
-    if (s.includes("shortlist")) return 0;
-
-    if (s.includes("interview")) return 1;
-    if (s.includes("hired") || s.includes("offered")) return 2;
-    if (s.includes("immigration")) return 3;
-    if (s.includes("placed")) return 4;
+    if (s.includes("shortlist")) return 1;
+    // "interviewed" must be checked before "interview".
+    if (s === "interviewed") return 3;
+    if (s.includes("interview")) return 2;
+    if (s.includes("hired") || s.includes("offered")) return 4;
+    if (s.includes("immigration")) return 5;
+    if (s.includes("placed")) return 6;
 
     return 0;
 }
@@ -46,17 +50,25 @@ export default function PipelineStepper({ status, candidate }) {
             </div>
 
             <div className="relative overflow-x-auto pb-0">
-                <div className="relative min-w-[650px] px-0 py-8 ">
-                    <div className="absolute left-[10%] right-[10%] top-[70px] h-1 rounded-full bg-gray-200" />
+                <div className="relative min-w-[860px] px-0 py-8 ">
+                    {/* Line runs from the centre of the first step to the centre of the last. */}
+                    <div
+                        className="absolute top-[70px] h-1 rounded-full bg-gray-200"
+                        style={{ left: `${EDGE}%`, right: `${EDGE}%` }}
+                    />
 
                     <div
-                        className="absolute left-[10%] top-[70px] h-1 rounded-full bg-red-600 transition-all duration-500"
+                        className="absolute top-[70px] h-1 rounded-full bg-red-600 transition-all duration-500"
                         style={{
-                            width: `calc(80% * ${activeIndex / (STEPS.length - 1)})`,
+                            left: `${EDGE}%`,
+                            width: `calc(${100 - 2 * EDGE}% * ${activeIndex / (STEPS.length - 1)})`,
                         }}
                     />
 
-                    <div className="relative z-10 grid grid-cols-5 gap-0">
+                    <div
+                        className="relative z-10 grid gap-0"
+                        style={{ gridTemplateColumns: `repeat(${STEPS.length}, minmax(0, 1fr))` }}
+                    >
                         {STEPS.map((step, index) => {
                             const isDone = index < activeIndex;
                             const isActive = index === activeIndex;

@@ -54,6 +54,10 @@ function normalizeStage(value) {
         return "Interview";
     }
 
+    if (v === "interviewed") {
+        return "Interviewed";
+    }
+
     if (v === "hired candidate" || v === "hired") {
         return "Hired";
     }
@@ -76,6 +80,7 @@ function stageWeight(stage) {
         Placed: 600,
         Immigration: 500,
         Hired: 400,
+        Interviewed: 350,
         Interview: 300,
         Shortlisted: 200,
         Suggested: 100,

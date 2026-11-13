@@ -7,6 +7,7 @@ export const runtime = "nodejs";
 const PIPELINE_STAGES = [
     "Shortlisted Candidate",
     "Requested Interview",
+    "Interviewed",
     "Hired Candidate",
     "Immigration",
     "Placed",
@@ -42,6 +43,7 @@ function normalizeStage(stage) {
 
     if (value === "shortlisted candidate") return "Shortlisted Candidate";
     if (value === "requested interview") return "Requested Interview";
+    if (value === "interviewed") return "Interviewed";
     if (value === "hired candidate") return "Hired Candidate";
     if (value === "immigration") return "Immigration";
     if (value === "placed") return "Placed";

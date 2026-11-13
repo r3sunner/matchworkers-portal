@@ -206,6 +206,7 @@ export async function GET(_req, ctx) {
             suggested: [],
             shortlisted: [],
             interview: [],
+            interviewed: [],
             hired: [],
             immigration: [],
             placed: [],
@@ -244,6 +245,8 @@ export async function GET(_req, ctx) {
                 processLower === "interview"
             ) {
                 lists.interview.push(candidateWithProcess);
+            } else if (processLower === "interviewed") {
+                lists.interviewed.push(candidateWithProcess);
             } else if (
                 processLower === "hired candidate" ||
                 processLower === "hired"

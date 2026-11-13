@@ -117,6 +117,14 @@ function getPipelineCounts(job) {
             text: "text-purple-700",
         },
         {
+            key: "interviewed",
+            label: "Interviewed",
+            match: ["interviewed"],
+            color: "bg-violet-500",
+            soft: "bg-violet-50",
+            text: "text-violet-700",
+        },
+        {
             key: "offered ",
             label: "Offered ",
             match: ["hired candidate", "offered "],
@@ -175,6 +183,7 @@ function PipelineQuickView({ job }) {
         suggested: 10,
         shortlisted: 25,
         interview: 45,
+        interviewed: 55,
         offered: 70,
         immigration: 85,
         placed: 100,

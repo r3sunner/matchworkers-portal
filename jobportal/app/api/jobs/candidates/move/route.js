@@ -115,6 +115,10 @@ function toProcessString(action) {
         return "Requested Interview";
     }
 
+    if (v === "interviewed") {
+        return "Interviewed";
+    }
+
     if (v === "hired" || v === "hired candidate") {
         return "Hired Candidate";
     }

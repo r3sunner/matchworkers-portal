@@ -32,6 +32,8 @@ function processKey(status) {
     const s = String(status || "").toLowerCase();
     if (s.includes("suggest")) return "suggested";
     if (s.includes("shortlist")) return "shortlisted";
+    // "interviewed" must be checked before "interview".
+    if (s === "interviewed") return "interviewed";
     if (s.includes("interview")) return "requestedInterview";
     if (s.includes("hired")) return "hired";
     if (s.includes("immigration")) return "immigration";
@@ -83,6 +85,7 @@ function normalizeJob(row, apiBase) {
         suggested: 0,
         shortlisted: 0,
         requestedInterview: 0,
+        interviewed: 0,
         hired: 0,
         immigration: 0,
         placed: 0,
@@ -92,6 +95,7 @@ function normalizeJob(row, apiBase) {
         suggested: [],
         shortlisted: [],
         requestedInterview: [],
+        interviewed: [],
         hired: [],
         immigration: [],
         placed: [],
