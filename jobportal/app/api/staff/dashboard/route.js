@@ -398,30 +398,60 @@ export async function GET(req) {
         const staffNotificationsPage = numberParam(searchParams.get("staffNotificationsPage"), 1, 1, 9999);
         const staffNotificationsPageSize = numberParam(searchParams.get("staffNotificationsPageSize"), 15, 1, 50);
 
-        const jobsQuery = qs.stringify(
-            {
-                status: "published",
-                filters: {
-                    statusList: {
-                        $eqi: "Open",
+        // Strapi returns at most 100 rows per request (maxLimit), so asking for 1000
+        // in one go silently cut Open Jobs at 100. Read 100 at a time until all pages
+        // are in. The id tie-breaker keeps the order stable across pages.
+        const jobsQueryForPage = (page) =>
+            qs.stringify(
+                {
+                    status: "published",
+                    filters: {
+                        statusList: {
+                            $eqi: "Open",
+                        },
                     },
-                },
-                sort: ["updatedAt:desc", "createdAt:desc"],
-                pagination: {
-                    pageSize: 1000,
-                },
-                populate: {
-                    client: true,
-                    assignCandidatesToJob: {
-                        populate: {
-                            candidate: true,
-                            offerLetter: true,
+                    sort: ["updatedAt:desc", "createdAt:desc", "id:desc"],
+                    pagination: {
+                        page,
+                        pageSize: 100,
+                    },
+                    populate: {
+                        client: true,
+                        assignCandidatesToJob: {
+                            populate: {
+                                candidate: true,
+                                offerLetter: true,
+                            },
                         },
                     },
                 },
-            },
-            { encodeValuesOnly: true }
-        );
+                { encodeValuesOnly: true }
+            );
+
+        // Same shape as a fetch() Response, so the code below is unchanged.
+        async function fetchAllOpenJobs() {
+            const rows = [];
+            const seen = new Set();
+            for (let page = 1; page <= 100; page += 1) {
+                const res = await fetch(`${base}/jobs?${jobsQueryForPage(page)}`, {
+                    headers: { Authorization: bearer() },
+                    cache: "no-store",
+                });
+                const json = await res.json().catch(() => null);
+                if (!res.ok) {
+                    return { ok: false, status: res.status, json: async () => json };
+                }
+                for (const row of arr(json?.data)) {
+                    const key = row?.documentId || row?.id;
+                    if (key && seen.has(key)) continue;
+                    if (key) seen.add(key);
+                    rows.push(row);
+                }
+                const pageCount = Number(json?.meta?.pagination?.pageCount) || 1;
+                if (page >= pageCount) break;
+            }
+            return { ok: true, status: 200, json: async () => ({ data: rows }) };
+        }
 
         const clientsQuery = qs.stringify(
             {
@@ -446,10 +476,7 @@ export async function GET(req) {
             totalCandidatesCount,
             availableCandidatesCount,
         ] = await Promise.all([
-            fetch(`${base}/jobs?${jobsQuery}`, {
-                headers: { Authorization: bearer() },
-                cache: "no-store",
-            }),
+            fetchAllOpenJobs(),
             fetch(`${base}/clients?${clientsQuery}`, {
                 headers: { Authorization: bearer() },
                 cache: "no-store",
