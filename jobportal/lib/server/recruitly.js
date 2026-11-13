@@ -9,6 +9,43 @@ const RECRUITLY_BASE_URL = (process.env.RECRUITLY_BASE_URL || "https://api.recru
 const REQUEST_TIMEOUT_MS = 20000;
 const RETRY_DELAY_MS = 600;
 
+// Recruitly allows 30 read requests per minute (and 10,000 a day shared by all
+// of Matchworkers' keys). The portal keeps under that with a margin: at most
+// RECRUITLY_MAX_PER_MINUTE calls (default 25) in any rolling minute, shared by
+// every route in this server process. Read at call time so tests can lower them.
+function rateConfig() {
+    return {
+        max: Number(process.env.RECRUITLY_MAX_PER_MINUTE) || 25,
+        windowMs: Number(process.env.RECRUITLY_RATE_WINDOW_MS) || 60000,
+        waitOn429Ms: Number(process.env.RECRUITLY_429_WAIT_MS) || 20000,
+    };
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Kept on globalThis so all routes share one limiter (Next bundles routes separately).
+const rateState = (globalThis.__recruitlyRate ??= { times: [], chain: Promise.resolve() });
+
+// Waits until a call is allowed, then records it. Calls queue in order.
+function waitForSlot() {
+    const run = rateState.chain.then(async () => {
+        const { max, windowMs } = rateConfig();
+        for (;;) {
+            const now = Date.now();
+            rateState.times = rateState.times.filter((t) => now - t < windowMs);
+            if (rateState.times.length < max) {
+                rateState.times.push(now);
+                return;
+            }
+            const waitMs = windowMs - (now - rateState.times[0]) + 25;
+            console.log(`[RECRUITLY] ${max} calls in the last minute; waiting ${Math.ceil(waitMs / 1000)}s`);
+            await sleep(waitMs);
+        }
+    });
+    rateState.chain = run.catch(() => {});
+    return run;
+}
+
 // R2: the only file categories the portal may pull, by Recruitly category ID.
 // Never add passport, ID or "Birth Certificate and candidate photo" categories.
 export const FILE_CATEGORY_FULL_CANDIDATE_PROFILE = "6b3da17a-ff98-4abf-bc6f-35ed41007d39";
@@ -80,10 +117,12 @@ export async function recruitlyRequest(method, path, { params, counter, binary =
 
     const url = buildUrl(path, params);
 
-    // One retry for a dropped connection or a brief Recruitly outage (502/503/504).
-    // GET only, so repeating is safe. 429 (daily limit) and other errors are not retried.
+    // One retry for a dropped connection, a brief Recruitly outage (502/503/504)
+    // or 429 (limit reached, e.g. by other keys): GET only, so repeating is safe.
+    // Other errors are not retried.
     let res;
     for (let attempt = 1; attempt <= 2; attempt += 1) {
+        await waitForSlot();
         if (counter) counter.calls += 1;
         const startedAt = Date.now();
         try {
@@ -96,7 +135,7 @@ export async function recruitlyRequest(method, path, { params, counter, binary =
         } catch (error) {
             console.error(`[RECRUITLY] GET ${path} failed after ${Date.now() - startedAt}ms:`, error?.name || "Error");
             if (attempt === 1) {
-                await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+                await sleep(RETRY_DELAY_MS);
                 continue;
             }
             throw new RecruitlyError(`Recruitly request failed: GET ${path}.`, { path });
@@ -104,7 +143,14 @@ export async function recruitlyRequest(method, path, { params, counter, binary =
 
         console.log(`[RECRUITLY] GET ${path} ${res.status} ${Date.now() - startedAt}ms`);
         if (attempt === 1 && [502, 503, 504].includes(res.status)) {
-            await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+            await sleep(RETRY_DELAY_MS);
+            continue;
+        }
+        if (attempt === 1 && res.status === 429) {
+            const retryAfterS = Number(res.headers.get("retry-after"));
+            const waitMs = retryAfterS > 0 ? Math.min(retryAfterS * 1000, 60000) : rateConfig().waitOn429Ms;
+            console.warn(`[RECRUITLY] GET ${path} 429 (limit reached); retrying once in ${Math.ceil(waitMs / 1000)}s`);
+            await sleep(waitMs);
             continue;
         }
         break;
@@ -141,9 +187,9 @@ const LIST_CACHE_MS = 5 * 60 * 1000;
 // variable would give every route its own copy.
 const listCache = (globalThis.__recruitlyListCache ??= new Map());
 
-async function cachedList(key, load, { fresh = false } = {}) {
+async function cachedList(key, load, { fresh = false, ttlMs = LIST_CACHE_MS } = {}) {
     const hit = listCache.get(key);
-    if (!fresh && hit && Date.now() - hit.at < LIST_CACHE_MS) return hit.value;
+    if (!fresh && hit && Date.now() - hit.at < ttlMs) return hit.value;
 
     const value = load();
     listCache.set(key, { at: Date.now(), value });
@@ -153,6 +199,12 @@ async function cachedList(key, load, { fresh = false } = {}) {
         listCache.delete(key);
         throw error;
     }
+}
+
+// One job's pipeline, for an import sent in several requests: the first request
+// reads it fresh, the next ones reuse it for up to a minute (same import).
+export function jobPipelineForImport(jobId, { counter, fresh = false } = {}) {
+    return cachedList(`pipeline:${jobId}`, () => listAllJobPipeline(jobId, { counter }), { fresh, ttlMs: 60 * 1000 });
 }
 
 export function listJobsCached({ counter, fresh } = {}) {
@@ -178,6 +230,12 @@ export async function placementsForJob(entries, jobId, { counter, fresh = false 
     const hit = listCache.get("placements");
     if (!fresh && hit && Date.now() - hit.at < LIST_CACHE_MS) return hit.value;
 
+    // First-page result for exactly these Placed candidates, reused for 5 minutes
+    // (a new Placed candidate on the job changes the key, so it is read again).
+    const jobKey = `placements-job:${jobId}:${[...wanted].sort().join(",")}`;
+    const jobHit = listCache.get(jobKey);
+    if (!fresh && jobHit && Date.now() - jobHit.at < LIST_CACHE_MS) return jobHit.value;
+
     const keyOf = (p) => `${p?.candidateId}|${p?.jobId}`;
     const first = await recruitlyRequest("GET", "/api/nova/placements/list", {
         params: { page: 0, size: PLACEMENT_PAGE_SIZE },
@@ -188,7 +246,9 @@ export async function placementsForJob(entries, jobId, { counter, fresh = false 
 
     const found = new Set(firstRows.map(keyOf).filter((k) => wanted.has(k)));
     if (found.size === wanted.size || firstRows.length >= total) {
-        return { placements: firstRows, total, complete: true };
+        const value = { placements: firstRows, total, complete: true };
+        listCache.set(jobKey, { at: Date.now(), value });
+        return value;
     }
 
     const pageCount = Math.min(Math.ceil(total / PLACEMENT_PAGE_SIZE), MAX_PLACEMENT_PAGES);

@@ -21,7 +21,8 @@ import {
     createCallCounter,
     getCandidate,
     getJob,
-    listAllJobPipeline,
+    jobPipelineForImport,
+    listJobsCached,
     placementsForJob,
     mapLimit,
     toImportCandidate,
@@ -219,6 +220,8 @@ export async function POST(req) {
     const jobId = String(body?.jobId || "");
     const clientDocumentId = String(body?.clientDocumentId || "");
     const candidateIds = Array.isArray(body?.candidateIds) ? [...new Set(body.candidateIds.map(String))] : [];
+    // First request of an import re-reads the pipeline from Recruitly; the rest reuse it.
+    const freshPipeline = body?.freshPipeline !== false;
 
     if (!ID_PATTERN.test(jobId)) {
         return NextResponse.json({ ok: false, error: "Invalid Recruitly job." }, { status: 400 });
@@ -245,18 +248,30 @@ export async function POST(req) {
         if (!client) throw new JobImportError("Portal client not found.", 404);
         if (!client.recruitlyCompanyId) throw new JobImportError("This client is not linked to a Recruitly company.", 400);
 
-        const jobJson = await getJob(jobId, { counter });
-        const recruitlyJob = jobJson?.data && !Array.isArray(jobJson.data) ? jobJson.data : jobJson;
+        // The job comes from the cached job list (0 calls when warm). The full job
+        // record is read only if it is missing there, or to create the portal job
+        // (the list has no short description).
+        let fullJob = null;
+        const loadFullJob = async () => {
+            if (!fullJob) {
+                const json = await getJob(jobId, { counter });
+                fullJob = json?.data && !Array.isArray(json.data) ? json.data : json;
+            }
+            return fullJob;
+        };
+        const jobList = await listJobsCached({ counter });
+        let recruitlyJob = (Array.isArray(jobList?.data) ? jobList.data : []).find((j) => String(j?.id) === jobId);
+        if (!recruitlyJob) recruitlyJob = await loadFullJob();
         if (!recruitlyJob?.id) throw new JobImportError("Recruitly job not found.", 404);
         if (recruitlyJob.companyId !== client.recruitlyCompanyId) {
             throw new JobImportError("This Recruitly job belongs to a different company than the client's link.", 400);
         }
 
         // Portal job: found by Recruitly job ID, or created under this client.
-        ({ job: portalJob, created: jobCreated } = await findOrCreatePortalJob(recruitlyJob, client));
+        ({ job: portalJob, created: jobCreated } = await findOrCreatePortalJob(recruitlyJob, client, { loadFullJob }));
 
         // Re-check every candidate against the live pipeline and stage mapping.
-        const { entries } = await listAllJobPipeline(jobId, { counter });
+        const { entries } = await jobPipelineForImport(jobId, { counter, fresh: freshPipeline });
         const active = entries.filter((e) => e?.rejected !== true);
         const placementList = await placementsForJob(active, jobId, { counter });
         const roleCache = new Map();

@@ -77,7 +77,9 @@ export function portalJobFields(recruitlyJob, clientDocumentId) {
 }
 
 // Returns { job, created }. Refuses a portal job already linked to another client.
-export async function findOrCreatePortalJob(recruitlyJob, client) {
+// recruitlyJob may be the job-list row; loadFullJob() reads the full record
+// (with short description) and is only called when the portal job is created.
+export async function findOrCreatePortalJob(recruitlyJob, client, { loadFullJob } = {}) {
     const found = await findJobByRecruitlyId(recruitlyJob.id);
     if (found.length > 1) {
         throw new JobImportError(`More than one portal job is linked to ${recruitlyJob.reference}. Please check the jobs list.`, 409);
@@ -106,10 +108,11 @@ export async function findOrCreatePortalJob(recruitlyJob, client) {
         return { job, created: false };
     }
 
+    const details = loadFullJob ? { ...recruitlyJob, ...(await loadFullJob()) } : recruitlyJob;
     await strapiRequest("/jobs", {
         method: "POST",
         query: { status: "published" },
-        body: { data: portalJobFields(recruitlyJob, client.documentId) },
+        body: { data: portalJobFields(details, client.documentId) },
     });
     const [job] = await findJobByRecruitlyId(recruitlyJob.id);
     if (!job) throw new JobImportError("The portal job could not be created.", 502);

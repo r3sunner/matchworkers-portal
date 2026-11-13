@@ -23,6 +23,12 @@ async function fetchJson(url, options) {
     return json;
 }
 
+// Candidates sent per import request (see runImport): one at a time, so staff
+// see "Importing 2 of 3…". Only the first request re-reads the job's pipeline.
+const IMPORT_BATCH = 1;
+// Above this, the dialog warns that a large import takes a while (30 calls/min).
+const LARGE_IMPORT = 10;
+
 const STAGE_LABEL = {
     "Suggested Candidate": "Suggested",
     "Shortlisted Candidate": "Shortlisted",
@@ -365,6 +371,7 @@ export default function RecruitlyImportPage() {
     const [pipelineError, setPipelineError] = useState("");
     const [selected, setSelected] = useState([]);
     const [importing, setImporting] = useState(false);
+    const [importProgress, setImportProgress] = useState(null); // { done, total }
     const [importResult, setImportResult] = useState(null);
     const [importError, setImportError] = useState("");
 
@@ -592,18 +599,55 @@ export default function RecruitlyImportPage() {
         setImporting(true);
         setImportError("");
         setImportResult(null);
+        setImportProgress({ done: 0, total: candidateIds.length });
+
+        // Sent IMPORT_BATCH at a time: Recruitly allows 30 calls a minute, so a big
+        // job takes a while; small requests keep each one short and show progress.
+        const results = new Map();
+        let job = null;
+        let calls = 0;
         try {
-            const json = await fetchJson("/api/recruitly/import/", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ jobId, clientDocumentId, candidateIds }),
-            });
-            setImportResult(json);
+            for (let i = 0; i < candidateIds.length; i += IMPORT_BATCH) {
+                const json = await fetchJson("/api/recruitly/import/", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        jobId,
+                        clientDocumentId,
+                        candidateIds: candidateIds.slice(i, i + IMPORT_BATCH),
+                        freshPipeline: i === 0,
+                    }),
+                });
+                if (json.job) job = job ? { ...json.job, created: job.created || json.job.created } : json.job;
+                calls += Number(json.recruitlyCalls) || 0;
+                for (const r of json.results || []) results.set(`${r.outcome === "removed" ? "removed:" : ""}${r.candidateId}`, r);
+                setImportProgress({ done: Math.min(i + IMPORT_BATCH, candidateIds.length), total: candidateIds.length });
+            }
             setSelected([]);
         } catch (error) {
-            setImportError(error.message);
+            setImportError(
+                results.size ? `${error.message} The candidates listed below were already imported.` : error.message
+            );
         } finally {
+            if (results.size) {
+                const rows = [...results.values()];
+                const count = (o) => rows.filter((r) => r.outcome === o).length;
+                setImportResult({
+                    job,
+                    results: rows,
+                    recruitlyCalls: calls,
+                    summary: {
+                        created: count("created"),
+                        updated: count("updated"),
+                        removed: count("removed"),
+                        review: count("review"),
+                        skipped: count("skipped"),
+                        failed: count("failed"),
+                    },
+                });
+            }
             setImporting(false);
+            setImportProgress(null);
             setConfirm({ kind: "result" });
         }
     }
@@ -1009,6 +1053,12 @@ export default function RecruitlyImportPage() {
                         <li>If a match is uncertain, the candidate is not imported and is listed for review.</li>
                         <li>Nothing changes in Recruitly.</li>
                     </ul>
+                    {selected.length > LARGE_IMPORT ? (
+                        <p className="mt-3 rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-600">
+                            Recruitly allows 30 requests a minute, so a large import takes a little while (about 2 minutes for 50
+                            candidates). Please keep this page open until it finishes.
+                        </p>
+                    ) : null}
                     <div className="mt-5 flex justify-end gap-2">
                         <button
                             type="button"
@@ -1024,7 +1074,11 @@ export default function RecruitlyImportPage() {
                             onClick={runImport}
                             className="rounded-lg bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-800 disabled:opacity-60"
                         >
-                            {importing ? "Importing…" : "Import"}
+                            {importing
+                                ? importProgress
+                                    ? `Importing ${Math.min(importProgress.done + 1, importProgress.total)} of ${importProgress.total}…`
+                                    : "Importing…"
+                                : "Import"}
                         </button>
                     </div>
                 </Modal>

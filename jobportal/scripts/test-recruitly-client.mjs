@@ -22,6 +22,9 @@ for (const level of ["log", "error"]) {
 }
 
 process.env.RECRUITLY_API_KEY = FAKE_KEY;
+// Keep the limiter out of the way in general tests; dedicated tests lower it.
+process.env.RECRUITLY_MAX_PER_MINUTE = "100000";
+process.env.RECRUITLY_429_WAIT_MS = "5";
 const recruitly = await import("../lib/server/recruitly.js");
 
 beforeEach(() => {
@@ -294,13 +297,21 @@ test("a dropped connection is retried once, then succeeds", async () => {
     assert.equal(counter.calls, 2, "both attempts count toward the daily limit");
 });
 
-test("503 is retried once; 429 (daily limit) and 404 are not", async () => {
-    let n = 0;
-    nextResponse = () => (++n === 1 ? new Response("", { status: 503 }) : new Response(JSON.stringify({ ok: 1 }), { status: 200 }));
-    assert.deepEqual(await recruitly.recruitlyRequest("GET", "/api/nova/jobs/list"), { ok: 1 });
-    assert.equal(sent.length, 2);
+test("503 and 429 are retried once; 404 and 500 are not", async () => {
+    for (const first of [503, 429]) {
+        sent = [];
+        let n = 0;
+        nextResponse = () => (++n === 1 ? new Response("", { status: first }) : new Response(JSON.stringify({ ok: 1 }), { status: 200 }));
+        assert.deepEqual(await recruitly.recruitlyRequest("GET", "/api/nova/jobs/list"), { ok: 1 });
+        assert.equal(sent.length, 2, `${first} retried once`);
+    }
 
-    for (const status of [429, 404, 500]) {
+    sent = [];
+    nextResponse = () => new Response("", { status: 429 });
+    await assert.rejects(recruitly.recruitlyRequest("GET", "/api/nova/jobs/list"), /429/);
+    assert.equal(sent.length, 2, "429 twice in a row gives a clear error");
+
+    for (const status of [404, 500]) {
         sent = [];
         nextResponse = () => new Response("", { status });
         await assert.rejects(recruitly.recruitlyRequest("GET", "/api/nova/jobs/list"), recruitly.RecruitlyError);
@@ -314,4 +325,62 @@ test("two dropped connections in a row give a clear error", async () => {
     };
     await assert.rejects(recruitly.recruitlyRequest("GET", "/api/nova/jobs/list"), /Recruitly request failed/);
     assert.equal(sent.length, 2);
+});
+
+test("placementsForJob: first-page result is reused for the same Placed candidates; fresh or a new Placed candidate reads again", async () => {
+    globalThis.__recruitlyListCache?.clear();
+    nextResponse = placementPages(751, 0, WANTED);
+    await recruitly.placementsForJob(PLACED_ENTRY, "job-1");
+    assert.equal(sent.length, 1);
+
+    sent = [];
+    await recruitly.placementsForJob(PLACED_ENTRY, "job-1");
+    assert.equal(sent.length, 0, "reused");
+
+    await recruitly.placementsForJob(PLACED_ENTRY, "job-1", { fresh: true });
+    assert.equal(sent.length, 1, "Reload from Recruitly reads again");
+
+    sent = [];
+    const twoPlaced = [...PLACED_ENTRY, { candidateId: "c-new", jobId: "job-1", status: "PLACED", rejected: false }];
+    await recruitly.placementsForJob(twoPlaced, "job-1");
+    assert.ok(sent.length >= 1, "a new Placed candidate is not served from the old result");
+});
+
+// ---- Rate limiter (Recruitly: 30 reads per minute) ----
+
+test("limiter: never more than the allowed calls in a rolling window, then waits", async () => {
+    process.env.RECRUITLY_MAX_PER_MINUTE = "3";
+    process.env.RECRUITLY_RATE_WINDOW_MS = "400";
+    globalThis.__recruitlyRate.times = [];
+    try {
+        const started = Date.now();
+        const stamps = [];
+        const origFetch = globalThis.fetch;
+        globalThis.fetch = async (url, options) => {
+            stamps.push(Date.now() - started);
+            return origFetch(url, options);
+        };
+        try {
+            await Promise.all(Array.from({ length: 5 }, () => recruitly.recruitlyRequest("GET", "/api/nova/jobs/list")));
+        } finally {
+            globalThis.fetch = origFetch;
+        }
+        stamps.sort((a, b) => a - b);
+        assert.equal(stamps.length, 5);
+        assert.ok(stamps[2] < 200, "first 3 go straight away");
+        assert.ok(stamps[3] >= 390, `4th waits for the window (${stamps[3]}ms)`);
+        for (let i = 3; i < stamps.length; i += 1) {
+            const inWindow = stamps.filter((t) => t > stamps[i] - 400 && t <= stamps[i]).length;
+            assert.ok(inWindow <= 3, "never more than 3 in any window");
+        }
+    } finally {
+        process.env.RECRUITLY_MAX_PER_MINUTE = "100000";
+        delete process.env.RECRUITLY_RATE_WINDOW_MS;
+        globalThis.__recruitlyRate.times = [];
+    }
+});
+
+test("limiter: GET-only guard still refuses before waiting or sending", async () => {
+    await assert.rejects(recruitly.recruitlyRequest("POST", "/api/nova/jobs/list"), /GET-only/);
+    assert.equal(sent.length, 0);
 });
