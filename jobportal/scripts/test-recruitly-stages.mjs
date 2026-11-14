@@ -71,7 +71,22 @@ test("Placed only with Landed – Working with our client", () => {
     assert.equal(none.action, ACTION.SHOW);
     assert.equal(none.portalStage, PORTAL_STAGE.IMMIGRATION);
 
-    for (const other of ["Landed - Awaiting placement", "Landed - Self-placed", "Ended - Resigned", "Ended - Absconded"]) {
+    // Agreed 13 Nov 2026: Landed – Awaiting placement stays visible at Immigration.
+    for (const awaiting of ["Landed - Awaiting placement", "Landed – Awaiting placement", "landed - awaiting placement"]) {
+        const r = map("PLACED", "Placed", {}, { placementStatus: awaiting });
+        assert.equal(r.action, ACTION.SHOW, awaiting);
+        assert.equal(r.portalStage, PORTAL_STAGE.IMMIGRATION, awaiting);
+    }
+
+    // Every other Landed and Ended status (Appendix B) removes the candidate.
+    for (const other of [
+        "Landed - Self-placed",
+        "Landed - Status unconfirmed",
+        "Ended - Contract completed",
+        "Ended - Resigned",
+        "Ended - Terminated",
+        "Ended - Absconded",
+    ]) {
         assert.equal(map("PLACED", "Placed", {}, { placementStatus: other }).action, ACTION.REMOVE, other);
     }
 });

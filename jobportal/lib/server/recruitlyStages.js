@@ -24,6 +24,7 @@ export const ACTION = {
 };
 
 export const PLACEMENT_LANDED_WORKING = "Landed - Working with our client";
+export const PLACEMENT_LANDED_AWAITING = "Landed - Awaiting placement";
 
 // Recruitly sub-stage name → portal stage. null = not shown yet.
 const SUB_STAGE_TO_PORTAL = {
@@ -87,6 +88,11 @@ export function mapPipelineEntry(entry, { placementStatus = null } = {}) {
         }
         if (normalize(placementStatus) === normalize(PLACEMENT_LANDED_WORKING)) {
             return result(ACTION.SHOW, PORTAL_STAGE.PLACED, "");
+        }
+        // Agreed 13 Nov 2026: the Immigration team creates the placement on landing
+        // day with this status, so the candidate stays visible at Immigration.
+        if (normalize(placementStatus) === normalize(PLACEMENT_LANDED_AWAITING)) {
+            return result(ACTION.SHOW, PORTAL_STAGE.IMMIGRATION, "Landed, awaiting placement");
         }
         return result(ACTION.REMOVE, null, `Placement status: ${placementStatus}`);
     }
