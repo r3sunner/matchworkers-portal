@@ -922,7 +922,6 @@ function ClientJobsContent() {
 
                                             <button
                                                 onClick={() => OpenJobBoard(j.documentId)}
-                                                disabled={String(j.statusList || "").toLowerCase() === "closed"}
                                                 className="w-full sm:w-auto rounded-md bg-red-700 text-white px-5 py-2 text-sm hover:opacity-90 disabled:opacity-40"
                                             >
                                                 Job Board
@@ -1174,7 +1173,6 @@ function ClientJobsContent() {
                             )}
                             <button
                                 onClick={() => OpenJobBoard(selectedJob.documentId)}
-                                disabled={String(selectedJob.statusList || "").toLowerCase() === "closed"}
                                 className="rounded-lg bg-red-700 text-white px-4 py-2 text-sm hover:opacity-90 disabled:opacity-40"
                             >
                                 Job Board
