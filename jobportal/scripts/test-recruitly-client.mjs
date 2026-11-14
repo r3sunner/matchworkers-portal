@@ -202,6 +202,13 @@ test("candidate mapping keeps only the import fields, custom fields by ID", () =
         overview: "Summary",
         yearsOfExperience: "4",
         workingVideoLink: "https://video",
+        dateOfBirth: "01/01/1990",
+        maritalStatus: "",
+        englishLevel: "",
+        miInterviewLink: "",
+        screeningDate: "",
+        currentEmployer: "",
+        employmentHistory: [],
     });
 
     const blank = recruitly.toImportCandidate({ id: "c2" });

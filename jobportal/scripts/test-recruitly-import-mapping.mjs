@@ -107,3 +107,73 @@ test("portal fields: empty values left out so an update never blanks staff data"
     assert.ok(!("referenceNumber" in data), "import never writes CAN_ references");
     assert.ok(!("mobile" in data) && !("email" in data), "contact details are compared, never copied");
 });
+
+// ---- Step 5 fields: dates, marital status, English level, companies, experience ----
+import { employmentFacts, mapEnglishLevel, mapMaritalStatus, parseRecruitlyDate } from "../lib/server/recruitlyImportMapping.js";
+
+test("Recruitly dates in every known format become yyyy-mm-dd", () => {
+    assert.equal(parseRecruitlyDate("05/03/1990"), "1990-03-05", "dd/mm/yyyy (day first)");
+    assert.equal(parseRecruitlyDate("05/03/1990 00:00:00"), "1990-03-05");
+    assert.equal(parseRecruitlyDate("1990-03-05"), "1990-03-05");
+    assert.equal(parseRecruitlyDate("1990-03-05T00:00:00.000Z"), "1990-03-05");
+    assert.equal(parseRecruitlyDate(Date.UTC(1990, 2, 5)), "1990-03-05");
+    for (const bad of ["", null, undefined, "not a date", "31/13/1990", "01/01/1800"]) assert.equal(parseRecruitlyDate(bad), "", String(bad));
+});
+
+test("marital status matches the portal list (same values in both systems)", () => {
+    for (const v of ["Single", "married", "Divorced", "Widowed"]) assert.ok(mapMaritalStatus(v).value);
+    assert.deepEqual(mapMaritalStatus(""), { value: "", note: "" });
+    assert.match(mapMaritalStatus("Engaged").note, /not in the portal list/);
+});
+
+test("English level: only exact matches filled until Good/Poor are decided", () => {
+    assert.deepEqual(mapEnglishLevel("Basic"), { value: "Basic", note: "" });
+    assert.equal(mapEnglishLevel("Good").value, "");
+    assert.match(mapEnglishLevel("Good").note, /no portal match yet/);
+    assert.equal(mapEnglishLevel("Poor").value, "");
+});
+
+test("employment history: current company, previous company, experience in years", () => {
+    const f = employmentFacts([
+        { companyName: "Old Hotel", startDate: "01/01/2015", endDate: "01/01/2018", current: false },
+        { companyName: "Recent Farm", startDate: "01/02/2018", endDate: "01/02/2021", current: false },
+        { companyName: "Now Ltd", startDate: "2021-03-01", endDate: null, current: true },
+    ]);
+    assert.equal(f.currentCompany, "Now Ltd");
+    assert.equal(f.previousCompany, "Recent Farm", "most recent finished job");
+    assert.equal(f.previousJobYears, 3);
+    assert.ok(f.currentJobYears >= 5, "current job counts to today");
+    assert.ok(f.totalYears >= 11);
+    const none = employmentFacts([{ companyName: "", startDate: null, endDate: null, current: false }], "From Employer");
+    assert.deepEqual(none, { currentCompany: "From Employer", previousCompany: "", currentJobYears: null, previousJobYears: null, totalYears: null });
+});
+
+test("Years of Experience: Matchworkers' field first, calculated only when empty", async () => {
+    const { toPortalCandidate } = await import("../lib/server/recruitlyImportMapping.js");
+    const history = [{ companyName: "A", startDate: "01/01/2010", endDate: "01/01/2014", current: false }];
+    assert.equal(toPortalCandidate({ recruitlyId: "x", yearsOfExperience: "7", employmentHistory: history }).data.numberOfExperience, 7);
+    assert.equal(toPortalCandidate({ recruitlyId: "x", yearsOfExperience: "", employmentHistory: history }).data.numberOfExperience, 4);
+});
+
+test("all step-5 fields reach the portal names from the field mapping", async () => {
+    const { toPortalCandidate } = await import("../lib/server/recruitlyImportMapping.js");
+    const { data, notes } = toPortalCandidate({
+        recruitlyId: "r1",
+        dateOfBirth: "05/03/1990",
+        maritalStatus: "Married",
+        englishLevel: "Basic",
+        miInterviewLink: "https://sharepoint/mi",
+        screeningDate: "12/10/2026",
+        currentEmployer: "Now Ltd",
+        employmentHistory: [{ companyName: "Before Co", startDate: "01/01/2019", endDate: "31/12/2020", current: false }],
+    });
+    assert.equal(data.birthDate, "1990-03-05");
+    assert.equal(data.maritalStatusList, "Married");
+    assert.equal(data.englishLevelList, "Basic");
+    assert.equal(data.miScreeningVideoLink, "https://sharepoint/mi");
+    assert.equal(data.dateScreeningInterview, "2026-10-12");
+    assert.equal(data.currentCompany, "Now Ltd");
+    assert.equal(data.previousCompany, "Before Co");
+    assert.equal(data.previousJobExperiece, 2);
+    assert.deepEqual(notes, []);
+});

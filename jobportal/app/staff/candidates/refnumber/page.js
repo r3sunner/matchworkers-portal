@@ -881,8 +881,8 @@ export default function EditCandidatePage({ params }) {
                             </div>
 
                             <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-                                <Field label="Number of Experience (Years)" error={errors.numberOfExperience?.message}>
-                                    <Input {...register("numberOfExperience")} type="number" min={0} step={1} />
+                                <Field label="Years of Experience" error={errors.numberOfExperience?.message}>
+                                    <Input {...register("numberOfExperience")} type="number" min={0} step="any" />
                                 </Field>
 
                                 <Field label="Currently Employed">

@@ -59,6 +59,10 @@ const ALLOWED_FILE_CATEGORIES = new Set([
 // Recruitly custom fields the portal imports, by field ID (labels can change).
 export const CUSTOM_FIELD_WORKING_VIDEO_LINK = "matc8992fd3d4d3f40deb4ea49efd47603c1";
 export const CUSTOM_FIELD_YEARS_OF_EXPERIENCE = "matc45a9109b69594fc6a7865991da39514d";
+export const CUSTOM_FIELD_MARITAL_STATUS = "matcb42bab7d8e55443992e31127f786d52b";
+export const CUSTOM_FIELD_ENGLISH_LEVEL = "matc3b1d000e70eb467f86ad5343c18bd18d";
+export const CUSTOM_FIELD_MI_INTERVIEW_LINK = "matc341f0dd8bbfe449aa5f78fda24c43b60";
+export const CUSTOM_FIELD_SCREENING_DATE = "matcdbe04e3c47f94f60b257b825b78f0027";
 
 export class RecruitlyError extends Error {
     constructor(message, { status = 0, path = "" } = {}) {
@@ -299,8 +303,9 @@ export async function listAllJobPipeline(jobId, { counter } = {}) {
 
 // Full candidate profile. Uses /api/candidate/{id} because the Nova candidate
 // endpoint has no gender or nationalities. The profile also holds fields the
-// portal must never copy (date of birth, NI number, notes): read it through
-// toImportCandidate() only. Returns null for an unknown id.
+// portal must never copy (NI number, notes, contact details, identity and visa
+// fields): read it through toImportCandidate() only, which takes just the fields
+// in the agreed field mapping (version 2, 13 Nov 2026). Returns null for an unknown id.
 export function getCandidate(candidateId, { counter } = {}) {
     return recruitlyRequest("GET", `/api/candidate/${encodeId(candidateId, "candidateId")}`, { counter });
 }
@@ -374,6 +379,22 @@ export function toImportCandidate(profile) {
         overview: profile?.overview || "",
         yearsOfExperience: customFieldValue(profile, CUSTOM_FIELD_YEARS_OF_EXPERIENCE),
         workingVideoLink: customFieldValue(profile, CUSTOM_FIELD_WORKING_VIDEO_LINK),
+        dateOfBirth: String(profile?.dateOfBirth || "").trim(),
+        maritalStatus: customFieldValue(profile, CUSTOM_FIELD_MARITAL_STATUS),
+        englishLevel: customFieldValue(profile, CUSTOM_FIELD_ENGLISH_LEVEL),
+        miInterviewLink: customFieldValue(profile, CUSTOM_FIELD_MI_INTERVIEW_LINK),
+        screeningDate: customFieldValue(profile, CUSTOM_FIELD_SCREENING_DATE),
+        // currentEmployer is an employment entry (object) on /api/candidate, text in some samples.
+        currentEmployer:
+            typeof profile?.currentEmployer === "string"
+                ? profile.currentEmployer.trim()
+                : String(profile?.currentEmployer?.companyName || "").trim(),
+        employmentHistory: (Array.isArray(profile?.employmentHistory) ? profile.employmentHistory : []).map((e) => ({
+            companyName: String(e?.companyName || "").trim(),
+            startDate: e?.startDate ?? null,
+            endDate: e?.endDate ?? null,
+            current: e?.current === true,
+        })),
     };
 }
 

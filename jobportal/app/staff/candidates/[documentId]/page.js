@@ -919,15 +919,15 @@ export default function EditCandidatePage() {
 
                             <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <Field
-                                    label="Number of Experience (Years)"
-                                    info="Total experience in years."
+                                    label="Years of Experience"
+                                    info="Total experience in years. Filled from Recruitly, or calculated from the employment history."
                                     error={errors.numberOfExperience?.message}
                                 >
                                     <Input
                                         {...register("numberOfExperience")}
                                         type="number"
                                         min={0}
-                                        step={1}
+                                        step="any"
                                     />
                                 </Field>
 
@@ -978,7 +978,7 @@ export default function EditCandidatePage() {
                                         {...register("previousJobExperiece")}
                                         type="number"
                                         min={0}
-                                        step={1}
+                                        step="any"
                                     />
                                 </Field>   */}
 
@@ -1005,7 +1005,7 @@ export default function EditCandidatePage() {
                                         {...register("currentJobExperiece")}
                                         type="number"
                                         min={0}
-                                        step={1}
+                                        step="any"
                                     />
                                 </Field>   */}
                             </div>

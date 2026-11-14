@@ -286,14 +286,102 @@ export function parseYears(value) {
 // the same person already in the portal. Returns the portal
 // fields to write (empty values left out, so an update never blanks a field
 // staff filled in) and notes for the import report.
+// Recruitly dates come as "dd/mm/yyyy", "dd/mm/yyyy HH:mm:ss", ISO "yyyy-mm-dd…"
+// or a timestamp. Returns "yyyy-mm-dd" (the portal's date format) or "".
+export function parseRecruitlyDate(value) {
+    if (value === null || value === undefined || value === "") return "";
+    let d = null;
+    if (typeof value === "number") d = new Date(value);
+    else {
+        const s = text(value);
+        let m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s|$|T)/);
+        let parts = null;
+        if (m) parts = [Number(m[3]), Number(m[2]), Number(m[1])];
+        else if ((m = s.match(/^(\d{4})-(\d{2})-(\d{2})/))) parts = [Number(m[1]), Number(m[2]), Number(m[3])];
+        if (parts) {
+            const [y, mo, day] = parts;
+            d = new Date(Date.UTC(y, mo - 1, day));
+            // Refuse impossible dates (31/13/1990, 30/02/…) instead of rolling over.
+            if (d.getUTCMonth() !== mo - 1 || d.getUTCDate() !== day) return "";
+        }
+        else if (/^\d{10,13}$/.test(s)) d = new Date(s.length === 10 ? Number(s) * 1000 : Number(s));
+    }
+    if (!d || Number.isNaN(d.getTime())) return "";
+    const year = d.getUTCFullYear();
+    if (year < 1900 || year > 2100) return "";
+    return d.toISOString().slice(0, 10);
+}
+
+function yearsBetween(start, end) {
+    const a = parseRecruitlyDate(start);
+    const b = end === "today" ? new Date().toISOString().slice(0, 10) : parseRecruitlyDate(end);
+    if (!a || !b) return null;
+    const days = (Date.parse(b) - Date.parse(a)) / 86400000;
+    return days >= 0 ? Math.round((days / 365.25) * 10) / 10 : null;
+}
+
+// Employment history → current company, previous company and experience in years.
+export function employmentFacts(history, currentEmployer = "") {
+    const jobs = Array.isArray(history) ? history : [];
+    const current = jobs.find((j) => j.current === true) || null;
+    const finished = jobs
+        .filter((j) => j.current !== true && parseRecruitlyDate(j.endDate))
+        .sort((x, y) => parseRecruitlyDate(y.endDate).localeCompare(parseRecruitlyDate(x.endDate)));
+    const previous = finished[0] || null;
+
+    let total = 0;
+    let counted = 0;
+    for (const j of jobs) {
+        const y = yearsBetween(j.startDate, j.current ? "today" : j.endDate);
+        if (y !== null) {
+            total += y;
+            counted += 1;
+        }
+    }
+
+    return {
+        currentCompany: text(current?.companyName) || text(currentEmployer),
+        previousCompany: text(previous?.companyName),
+        currentJobYears: current ? yearsBetween(current.startDate, "today") : null,
+        previousJobYears: previous ? yearsBetween(previous.startDate, previous.endDate) : null,
+        totalYears: counted ? Math.round(total * 10) / 10 : null,
+    };
+}
+
+export const PORTAL_MARITAL_STATUSES = ["Single", "Married", "Divorced", "Widowed"];
+
+export function mapMaritalStatus(value) {
+    const wanted = text(value).toLowerCase();
+    if (!wanted) return { value: "", note: "" };
+    const match = PORTAL_MARITAL_STATUSES.find((m) => m.toLowerCase() === wanted);
+    return match ? { value: match, note: "" } : { value: "", note: `Marital status "${text(value)}" is not in the portal list` };
+}
+
+// Recruitly: Basic, Good, Poor. Portal: Average, Basic, Below Basic, Excellent.
+// Only exact matches are filled until Matchworkers confirms how "Good" and
+// "Poor" should appear; anything else is left empty and flagged.
+export const ENGLISH_LEVEL_MAP = { basic: "Basic" };
+
+export function mapEnglishLevel(value) {
+    const wanted = text(value).toLowerCase();
+    if (!wanted) return { value: "", note: "" };
+    const match = ENGLISH_LEVEL_MAP[wanted];
+    return match
+        ? { value: match, note: "" }
+        : { value: "", note: `English level "${text(value)}" has no portal match yet; left empty` };
+}
+
 export function toPortalCandidate(candidate) {
     const notes = [];
     const gender = mapGender(candidate?.gender);
     const nationality = mapNationality(candidate?.nationalityCodes, candidate?.nationalities);
-    if (gender.note) notes.push(gender.note);
-    if (nationality.note) notes.push(nationality.note);
+    const marital = mapMaritalStatus(candidate?.maritalStatus);
+    const english = mapEnglishLevel(candidate?.englishLevel);
+    for (const n of [gender.note, nationality.note, marital.note, english.note]) if (n) notes.push(n);
 
-    const years = parseYears(candidate?.yearsOfExperience);
+    const work = employmentFacts(candidate?.employmentHistory, candidate?.currentEmployer);
+    // Years of Experience: Matchworkers' own field first; calculated only when it is empty.
+    const years = parseYears(candidate?.yearsOfExperience) ?? work.totalYears;
     const data = {
         recruitlyId: text(candidate?.recruitlyId),
         caNumber: text(candidate?.reference),
@@ -305,6 +393,15 @@ export function toPortalCandidate(candidate) {
         shortSummary: htmlToText(candidate?.overview),
         numberOfExperience: years,
         workingVideoLink: text(candidate?.workingVideoLink),
+        birthDate: parseRecruitlyDate(candidate?.dateOfBirth),
+        maritalStatusList: marital.value,
+        englishLevelList: english.value,
+        currentCompany: work.currentCompany,
+        previousCompany: work.previousCompany,
+        currentJobExperiece: work.currentJobYears,
+        previousJobExperiece: work.previousJobYears,
+        miScreeningVideoLink: text(candidate?.miInterviewLink),
+        dateScreeningInterview: parseRecruitlyDate(candidate?.screeningDate),
     };
 
     for (const key of Object.keys(data)) {

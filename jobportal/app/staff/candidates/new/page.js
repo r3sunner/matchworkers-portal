@@ -773,11 +773,11 @@ export default function NewCandidatePage() {
 
                             <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <Field
-                                    label="Number of Experience (Years)"
+                                    label="Years of Experience"
                                     info="Total experience in years. (number field)"
                                     error={errors.numberOfExperience?.message}
                                 >
-                                    <Input {...register("numberOfExperience")} type="number" min={0} step={1} />
+                                    <Input {...register("numberOfExperience")} type="number" min={0} step="any" />
                                 </Field>
 
                                 <Field label="Currently Employed" info="Yes if candidate is currently working.">
@@ -817,7 +817,7 @@ export default function NewCandidatePage() {
                                     info="Short details about previous jobs."
                                     error={errors.previousJobExperiece?.message}
                                 >
-                                    <Input {...register("previousJobExperiece")} type="number" min={0} step={1} />
+                                    <Input {...register("previousJobExperiece")} type="number" min={0} step="any" />
                                 </Field>    */   }
 
                                 <Field label="Current Company" info="Last company name (if any)." error={errors.currentCompany?.message}>
@@ -835,7 +835,7 @@ export default function NewCandidatePage() {
                                     info="Short details about current job."
                                     error={errors.currentJobExperiece?.message}
                                 >
-                                    <Input {...register("currentJobExperiece")} type="number" min={0} step={1} />
+                                    <Input {...register("currentJobExperiece")} type="number" min={0} step="any" />
                                 </Field>     */}
                             </div>
 
