@@ -93,6 +93,7 @@ export async function GET(req) {
                 $or: [
                     { fullName: { $containsi: q } },
                     { referenceNumber: { $containsi: q } },
+                    { previousReference: { $containsi: q } },
                     { nationality: { $containsi: q } },
                     { gender: { $containsi: q } },
                 ],

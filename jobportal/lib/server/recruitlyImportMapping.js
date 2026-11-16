@@ -410,3 +410,17 @@ export function toPortalCandidate(candidate) {
 
     return { data, notes };
 }
+
+// R4: the portal's reference shown on every screen (referenceNumber) becomes the
+// Recruitly CA number. An existing portal reference (e.g. CAN_123) is kept in
+// previousReference the first time, so it is never lost and search still finds it.
+// Returns only the fields to change ({} when nothing changes).
+export function referenceChange(existing, caNumber) {
+    const ca = String(caNumber || "").trim();
+    if (!ca) return {};
+    const current = String(existing?.referenceNumber || "").trim();
+    if (current === ca) return {};
+    const out = { referenceNumber: ca };
+    if (current && !String(existing?.previousReference || "").trim()) out.previousReference = current;
+    return out;
+}

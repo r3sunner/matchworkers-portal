@@ -539,6 +539,7 @@ export interface ApiCandidateCandidate extends Struct.CollectionTypeSchema {
     passportExpireDate: Schema.Attribute.Date;
     previousCompany: Schema.Attribute.String;
     previousJobExperiece: Schema.Attribute.Decimal;
+    previousReference: Schema.Attribute.String;
     privateNotes: Schema.Attribute.Text;
     profileImage: Schema.Attribute.Media<'images'>;
     publishedAt: Schema.Attribute.DateTime;

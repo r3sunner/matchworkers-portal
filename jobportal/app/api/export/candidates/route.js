@@ -390,6 +390,7 @@ export async function POST(req) {
             } else if (q) {
                 filters.$or = [
                     { referenceNumber: { $containsi: q } },
+                    { previousReference: { $containsi: q } },
                     { fullName: { $containsi: q } },
                     { firstName: { $containsi: q } },
                     { lastName: { $containsi: q } },

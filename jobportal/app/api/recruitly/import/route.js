@@ -31,7 +31,7 @@ import {
 import { ACTION, mapPipelineEntry, placementStatusFor } from "@/lib/server/recruitlyStages";
 import { PortalStrapiError, strapiRequest } from "@/lib/server/portalStrapi";
 import { syncCandidateFiles } from "@/lib/server/recruitlyFiles";
-import { normalizeEmail, phoneDigits, samePhone, toPortalCandidate } from "@/lib/server/recruitlyImportMapping";
+import { normalizeEmail, phoneDigits, referenceChange, samePhone, toPortalCandidate } from "@/lib/server/recruitlyImportMapping";
 import {
     JobImportError,
     documentIdsForRecruitlyIds,
@@ -56,7 +56,7 @@ const STAGE_LABEL = {
 };
 const MAX_PER_IMPORT = 50;
 
-const CANDIDATE_FIELDS = ["documentId", "fullName", "recruitlyId", "caNumber", "mobile", "referenceNumber"];
+const CANDIDATE_FIELDS = ["documentId", "fullName", "recruitlyId", "caNumber", "mobile", "referenceNumber", "previousReference"];
 
 function summaryOf(c) {
     return {
@@ -191,6 +191,14 @@ async function importOne({ candidateId, entry, mapped, profile, roleCache, count
     else if (source.jobTitle) base.notes.push(`Job role "${source.jobTitle}" not found in the portal; left blank`);
 
     const existing = match.kind === "match" ? match.candidate : null;
+
+    // R4: the CA number becomes the reference shown everywhere; the old one is kept.
+    const reference = referenceChange(existing, data.caNumber);
+    Object.assign(data, reference);
+    if (existing && reference.referenceNumber && existing.referenceNumber) {
+        base.notes.push(`Reference changed from ${existing.referenceNumber} to ${reference.referenceNumber} (old reference kept for search)`);
+    }
+
     let saved;
     try {
         saved = await saveCandidate(existing, data);

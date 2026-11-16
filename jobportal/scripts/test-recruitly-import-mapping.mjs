@@ -12,6 +12,7 @@ import {
     phoneDigits,
     samePhone,
     toPortalCandidate,
+    referenceChange,
 } from "../lib/server/recruitlyImportMapping.js";
 
 const ENUMS = JSON.parse(readFileSync(new URL("../config/enums.json", import.meta.url), "utf8"));
@@ -177,3 +178,29 @@ test("all step-5 fields reach the portal names from the field mapping", async ()
     assert.equal(data.previousJobExperiece, 2);
     assert.deepEqual(notes, []);
 });
+
+test("R4 reference: new candidate gets the CA number as its reference", () => {
+    assert.deepEqual(referenceChange(null, "CA-114061"), { referenceNumber: "CA-114061" });
+});
+
+test("R4 reference: existing CAN_ moves to previousReference, CA number shown", () => {
+    assert.deepEqual(referenceChange({ referenceNumber: "CAN_57" }, "CA-114061"), {
+        referenceNumber: "CA-114061",
+        previousReference: "CAN_57",
+    });
+});
+
+test("R4 reference: already the CA number, nothing changes", () => {
+    assert.deepEqual(referenceChange({ referenceNumber: "CA-114061", previousReference: "CAN_57" }, "CA-114061"), {});
+});
+
+test("R4 reference: the first old reference is never overwritten", () => {
+    assert.deepEqual(referenceChange({ referenceNumber: "", previousReference: "CAN_57" }, "CA-114061"), { referenceNumber: "CA-114061" });
+    assert.deepEqual(referenceChange({ referenceNumber: "X-1", previousReference: "CAN_57" }, "CA-114061"), { referenceNumber: "CA-114061" });
+});
+
+test("R4 reference: no CA number in Recruitly, portal reference left as it is", () => {
+    assert.deepEqual(referenceChange({ referenceNumber: "CAN_57" }, ""), {});
+    assert.deepEqual(referenceChange({ referenceNumber: "CAN_57" }, null), {});
+});
+

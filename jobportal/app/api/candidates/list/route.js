@@ -191,6 +191,7 @@ export async function GET(req) {
             andFilters.push({
                 $or: [
                     { referenceNumber: { $containsi: q } },
+                    { previousReference: { $containsi: q } },
                     { fullName: { $containsi: q } },
                     { firstName: { $containsi: q } },
                     { lastName: { $containsi: q } },
