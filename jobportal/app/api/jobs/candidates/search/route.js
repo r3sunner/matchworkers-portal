@@ -116,7 +116,7 @@ export async function GET(req) {
                 nationality: c?.nationality || "",
                 gender: c?.gender || "",
                 isProfileVerified: !!c?.isProfileVerified,
-                avatar: img.url || "https://placehold.net/avatar.svg",
+                avatar: img.url || "/images/default-avatar.jpg",
                 summary: c?.shortSummary || "",
             };
         });

@@ -68,3 +68,33 @@ export async function strapiFetchAll(path, query = {}) {
 
     return rows;
 }
+
+// Uploads one file into the portal's media library (local disk or AWS S3,
+// whichever the Strapi upload provider is set to). Returns the file record.
+export async function strapiUploadFile({ buffer, filename, contentType, caption = "", alternativeText = "" }) {
+    const { base, token } = config();
+    const form = new FormData();
+    form.append("files", new Blob([buffer], { type: contentType || "application/octet-stream" }), filename);
+    form.append("fileInfo", JSON.stringify({ name: filename, caption, alternativeText }));
+
+    const res = await fetch(`${base}/upload`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: form,
+        cache: "no-store",
+    });
+    const text = await res.text();
+    const json = text ? JSON.parse(text) : null;
+
+    if (!res.ok) {
+        throw new PortalStrapiError(json?.error?.message || `Strapi upload returned ${res.status}.`, { status: res.status });
+    }
+
+    const file = Array.isArray(json) ? json[0] : json;
+    if (!file?.id) throw new PortalStrapiError("Strapi upload returned no file.", { status: 502 });
+    return file;
+}
+
+export async function strapiDeleteFile(fileId) {
+    await strapiRequest(`/upload/files/${encodeURIComponent(fileId)}`, { method: "DELETE" });
+}

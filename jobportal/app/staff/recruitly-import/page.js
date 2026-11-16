@@ -23,9 +23,10 @@ async function fetchJson(url, options) {
     return json;
 }
 
-// Candidates sent per import request (see runImport): one at a time, so staff
-// see "Importing 2 of 3…". Only the first request re-reads the job's pipeline.
-const IMPORT_BATCH = 1;
+// Candidates sent per import request (see runImport): 3 at a time, so their
+// Recruitly reads and file copies run in parallel and staff see "Importing 4–6
+// of 10…". Only the first request re-reads the job's pipeline.
+const IMPORT_BATCH = 3;
 // Above this, the dialog warns that a large import takes a while (30 calls/min).
 const LARGE_IMPORT = 10;
 
@@ -267,6 +268,15 @@ function SearchableSelect({ value, onChange, options, placeholder = "Select", di
     );
 }
 
+// Import result: what happened to the candidate's Full Candidate Profile (CV) and photo.
+const FILE_STATUS = {
+    added: "added",
+    updated: "updated (newer file in Recruitly)",
+    unchanged: "unchanged",
+    missing: "none in Recruitly",
+    failed: "could not be copied",
+};
+
 const OUTCOME = {
     created: { label: "Created", style: "bg-green-50 text-green-700 ring-green-200" },
     updated: { label: "Updated", style: "bg-sky-50 text-sky-700 ring-sky-200" },
@@ -320,6 +330,12 @@ function ImportResult({ result }) {
                                 <td className="px-3 py-3 text-xs text-gray-600">
                                     {r.outcome === "updated" && r.matchedBy ? <div>Matched existing candidate by {r.matchedBy}</div> : null}
                                     {r.stageNote ? <div className="text-gray-800">{r.stageNote}</div> : null}
+                                    {r.files ? (
+                                        <div className="text-gray-600">
+                                            CV: {FILE_STATUS[r.files.cv] || r.files.cv} · Photo:{" "}
+                                            {r.files.photo === "missing" ? "none in Recruitly (placeholder shown)" : FILE_STATUS[r.files.photo] || r.files.photo}
+                                        </div>
+                                    ) : null}
                                     {r.reason ? <div>{r.reason}</div> : null}
                                     {(r.possibleMatches || []).map((m) => (
                                         <div key={m.documentId} className="text-gray-500">
@@ -1076,7 +1092,9 @@ export default function RecruitlyImportPage() {
                         >
                             {importing
                                 ? importProgress
-                                    ? `Importing ${Math.min(importProgress.done + 1, importProgress.total)} of ${importProgress.total}…`
+                                    ? importProgress.done + 1 >= Math.min(importProgress.done + IMPORT_BATCH, importProgress.total)
+                                        ? `Importing ${importProgress.total} of ${importProgress.total}…`
+                                        : `Importing ${importProgress.done + 1}–${Math.min(importProgress.done + IMPORT_BATCH, importProgress.total)} of ${importProgress.total}…`
                                     : "Importing…"
                                 : "Import"}
                         </button>

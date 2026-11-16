@@ -84,7 +84,7 @@ function pickCandidate(candidate, STRAPI_BASE_URL) {
         workingVideoLink: cd?.workingVideoLink || "",
         miScreeningVideoLink: cd?.miScreeningVideoLink || "",
         currentlyEmployed: cd?.currentlyEmployed || null,
-        avatar: profileImage?.url || "https://placehold.net/avatar.svg",
+        avatar: profileImage?.url || "/images/default-avatar.jpg",
         cvUrl: cv?.url || "",
         job_roles: cd?.job_roles || "",
         passportUrl: passport?.url || "",

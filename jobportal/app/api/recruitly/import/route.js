@@ -22,6 +22,7 @@ import {
     getCandidate,
     getJob,
     jobPipelineForImport,
+    listCandidateFiles,
     listJobsCached,
     placementsForJob,
     mapLimit,
@@ -29,6 +30,7 @@ import {
 } from "@/lib/server/recruitly";
 import { ACTION, mapPipelineEntry, placementStatusFor } from "@/lib/server/recruitlyStages";
 import { PortalStrapiError, strapiRequest } from "@/lib/server/portalStrapi";
+import { syncCandidateFiles } from "@/lib/server/recruitlyFiles";
 import { normalizeEmail, phoneDigits, samePhone, toPortalCandidate } from "@/lib/server/recruitlyImportMapping";
 import {
     JobImportError,
@@ -166,7 +168,7 @@ async function saveCandidate(existing, data) {
     return { documentId: json?.data?.documentId || null, id: json?.data?.id ?? null };
 }
 
-async function importOne({ candidateId, entry, mapped, profile, roleCache }) {
+async function importOne({ candidateId, entry, mapped, profile, roleCache, counter }) {
     const base = { candidateId, name: entry?.candidateName || "", reference: "", notes: [] };
 
     if (!profile) return { ...base, outcome: "skipped", reason: "Not found in Recruitly" };
@@ -302,13 +304,17 @@ export async function POST(req) {
             eligible.push({ candidateId, entry, mapped });
         }
 
-        // 2. Read the Recruitly profiles, 3 at a time (Recruitly is slow per call).
-        const profiles = await mapLimit(eligible, 3, (item) =>
-            getCandidate(item.candidateId, { counter }).then(
-                (profile) => ({ profile }),
-                (error) => ({ error })
-            )
-        );
+        // 2. Read the Recruitly profiles, 3 at a time (Recruitly is slow per call),
+        //    with each candidate's file list (R2) at the same time.
+        const profiles = await mapLimit(eligible, 3, async (item) => {
+            const [profileRead, filesRead] = await Promise.allSettled([
+                getCandidate(item.candidateId, { counter }),
+                listCandidateFiles(item.candidateId, { counter }),
+            ]);
+            if (profileRead.status === "rejected") return { error: profileRead.reason };
+            return { profile: profileRead.value, files: filesRead.status === "fulfilled" ? filesRead.value : null };
+        });
+        const filesByCandidate = new Map(eligible.map((item, i) => [item.candidateId, profiles[i]?.files ?? null]));
 
         // 3. Save in the portal one by one, so two rows can never race into a duplicate.
         for (const [i, item] of eligible.entries()) {
@@ -319,7 +325,7 @@ export async function POST(req) {
                 continue;
             }
             try {
-                results.push(await importOne({ ...item, profile, roleCache }));
+                results.push(await importOne({ ...item, profile, roleCache, counter }));
             } catch (error) {
                 console.error("[RECRUITLY_IMPORT] Candidate failed:", item.candidateId, error?.message);
                 results.push({
@@ -331,6 +337,27 @@ export async function POST(req) {
                 });
             }
         }
+
+        // 3b. R2 / R3: latest Full Candidate Profile and Photo into portal storage,
+        //     3 candidates at a time. A file problem never undoes the candidate
+        //     import; it is reported instead.
+        const saved = results.filter((r) => (r.outcome === "created" || r.outcome === "updated") && r.portalDocumentId);
+        await mapLimit(saved, 3, async (r) => {
+            try {
+                const synced = await syncCandidateFiles({
+                    recruitlyCandidateId: r.candidateId,
+                    portalDocumentId: r.portalDocumentId,
+                    files: filesByCandidate.get(r.candidateId) ?? undefined,
+                    counter,
+                });
+                r.files = { cv: synced.cv, photo: synced.photo };
+                r.notes.push(...synced.notes);
+            } catch (error) {
+                console.error("[RECRUITLY_IMPORT] Files failed:", r.candidateId, error?.message);
+                r.files = { cv: "failed", photo: "failed" };
+                r.notes.push("Files could not be copied from Recruitly this time; the candidate was still imported");
+            }
+        });
 
         // 4. Pipeline on the portal job: add / update stage, remove rejected or ended.
         const upserts = results
