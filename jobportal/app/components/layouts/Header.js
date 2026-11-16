@@ -70,6 +70,11 @@ function getMenuLinksByRole(role, userDocumentId) {
                 icon: "import",
             },
             {
+                label: "Match Candidates",
+                href: "/staff/recruitly-matching/",
+                icon: "match",
+            },
+            {
                 label: "My Profile",
                 href: "/staff/profile",
                 icon: "profile",
@@ -309,6 +314,15 @@ function MenuIcon({
                 <path d="M12 3v12" />
                 <path d="M7 10l5 5 5-5" />
                 <path d="M4 17v1.5A2.5 2.5 0 0 0 6.5 21h11a2.5 2.5 0 0 0 2.5-2.5V17" />
+            </svg>
+        );
+    }
+
+    if (name === "match") {
+        return (
+            <svg {...commonProps}>
+                <path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1" />
+                <path d="M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1" />
             </svg>
         );
     }

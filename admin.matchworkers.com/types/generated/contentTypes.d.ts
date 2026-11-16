@@ -484,6 +484,49 @@ export interface ApiAgentAgent extends Struct.CollectionTypeSchema {
   };
 }
 
+export interface ApiCandidateMatchCandidateMatch
+  extends Struct.CollectionTypeSchema {
+  collectionName: 'candidate_matches';
+  info: {
+    description: "R4: one row per existing portal candidate to be linked to Recruitly. Staff confirm or reject the suggested match on the portal's review screen.";
+    displayName: 'Candidate Match (Recruitly review)';
+    pluralName: 'candidate-matches';
+    singularName: 'candidate-match';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  attributes: {
+    candidateDocumentId: Schema.Attribute.String &
+      Schema.Attribute.Required &
+      Schema.Attribute.Unique;
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+    decidedAt: Schema.Attribute.DateTime;
+    decidedBy: Schema.Attribute.String;
+    linkedCaNumber: Schema.Attribute.String;
+    linkedRecruitlyId: Schema.Attribute.String;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<
+      'oneToMany',
+      'api::candidate-match.candidate-match'
+    > &
+      Schema.Attribute.Private;
+    note: Schema.Attribute.Text;
+    publishedAt: Schema.Attribute.DateTime;
+    status: Schema.Attribute.Enumeration<
+      ['pending', 'no_suggestion', 'confirmed', 'rejected']
+    > &
+      Schema.Attribute.Required &
+      Schema.Attribute.DefaultTo<'pending'>;
+    suggestions: Schema.Attribute.JSON;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+  };
+}
+
 export interface ApiCandidateCandidate extends Struct.CollectionTypeSchema {
   collectionName: 'candidates';
   info: {
@@ -1384,6 +1427,7 @@ declare module '@strapi/strapi' {
       'admin::transfer-token-permission': AdminTransferTokenPermission;
       'admin::user': AdminUser;
       'api::agent.agent': ApiAgentAgent;
+      'api::candidate-match.candidate-match': ApiCandidateMatchCandidateMatch;
       'api::candidate.candidate': ApiCandidateCandidate;
       'api::client-notification.client-notification': ApiClientNotificationClientNotification;
       'api::client.client': ApiClientClient;

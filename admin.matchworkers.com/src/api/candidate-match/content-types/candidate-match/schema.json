@@ -1,0 +1,45 @@
+{
+  "kind": "collectionType",
+  "collectionName": "candidate_matches",
+  "info": {
+    "singularName": "candidate-match",
+    "pluralName": "candidate-matches",
+    "displayName": "Candidate Match (Recruitly review)",
+    "description": "R4: one row per existing portal candidate to be linked to Recruitly. Staff confirm or reject the suggested match on the portal's review screen."
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "candidateDocumentId": {
+      "type": "string",
+      "required": true,
+      "unique": true
+    },
+    "status": {
+      "type": "enumeration",
+      "enum": ["pending", "no_suggestion", "confirmed", "rejected"],
+      "default": "pending",
+      "required": true
+    },
+    "suggestions": {
+      "type": "json"
+    },
+    "linkedRecruitlyId": {
+      "type": "string"
+    },
+    "linkedCaNumber": {
+      "type": "string"
+    },
+    "decidedBy": {
+      "type": "string"
+    },
+    "decidedAt": {
+      "type": "datetime"
+    },
+    "note": {
+      "type": "text"
+    }
+  }
+}

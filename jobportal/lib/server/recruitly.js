@@ -315,6 +315,20 @@ export function getCandidate(candidateId, { counter } = {}) {
 const PLACEMENT_PAGE_SIZE = 100;
 const MAX_PLACEMENT_PAGES = 50;
 
+// R4 review screen: the Recruitly candidate with exactly this CA reference, or
+// null. Recruitly's keyword search finds a CA reference reliably (tested), but
+// not a full name, so it is only used for "Link by CA number".
+export async function findCandidateByReference(reference, { counter } = {}) {
+    const wanted = String(reference || "").trim().toUpperCase();
+    if (!wanted) return null;
+    const json = await recruitlyRequest("GET", "/api/nova/candidates/search", {
+        params: { query: wanted, page: 0, size: 5 },
+        counter,
+    });
+    const rows = Array.isArray(json?.data) ? json.data : Array.isArray(json?.content) ? json.content : Array.isArray(json) ? json : [];
+    return rows.find((c) => String(c?.reference || "").trim().toUpperCase() === wanted) || null;
+}
+
 export async function listAllPlacements({ counter } = {}) {
     const placements = [];
     let total = 0;
