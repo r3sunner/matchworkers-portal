@@ -242,6 +242,7 @@ export async function POST(req) {
     const results = [];
     let portalJob = null;
     let jobCreated = false;
+    let jobLinked = false;
     let pipelineChange = null;
 
     try {
@@ -270,7 +271,7 @@ export async function POST(req) {
         }
 
         // Portal job: found by Recruitly job ID, or created under this client.
-        ({ job: portalJob, created: jobCreated } = await findOrCreatePortalJob(recruitlyJob, client, { loadFullJob }));
+        ({ job: portalJob, created: jobCreated, linked: jobLinked } = await findOrCreatePortalJob(recruitlyJob, client, { loadFullJob }));
 
         // Re-check every candidate against the live pipeline and stage mapping.
         const { entries } = await jobPipelineForImport(jobId, { counter, fresh: freshPipeline });
@@ -435,7 +436,7 @@ export async function POST(req) {
     };
 
     console.log(
-        `[RECRUITLY_IMPORT] ${session.user?.email || "staff"} job ${jobId}: created ${summary.created}, updated ${summary.updated}, review ${summary.review}, skipped ${summary.skipped}, failed ${summary.failed}, removed ${summary.removed}, portal job ${portalJob?.referenceNo || "-"}${jobCreated ? " (created)" : ""}, Recruitly calls ${counter.calls}`
+        `[RECRUITLY_IMPORT] ${session.user?.email || "staff"} job ${jobId}: created ${summary.created}, updated ${summary.updated}, review ${summary.review}, skipped ${summary.skipped}, failed ${summary.failed}, removed ${summary.removed}, portal job ${portalJob?.referenceNo || "-"}${jobCreated ? " (created)" : jobLinked ? " (linked)" : ""}, Recruitly calls ${counter.calls}`
     );
 
     const publicResults = results.map(({ portalId: _internal, ...rest }) => rest);
@@ -443,7 +444,7 @@ export async function POST(req) {
         ok: true,
         jobId,
         job: portalJob
-            ? { documentId: portalJob.documentId, referenceNo: portalJob.referenceNo || "", title: portalJob.title || "", created: jobCreated }
+            ? { documentId: portalJob.documentId, referenceNo: portalJob.referenceNo || "", title: portalJob.title || "", created: jobCreated, linked: jobLinked }
             : null,
         summary,
         results: publicResults,

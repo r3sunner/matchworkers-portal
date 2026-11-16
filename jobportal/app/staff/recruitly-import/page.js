@@ -294,7 +294,11 @@ function ImportResult({ result }) {
             {result?.job ? (
                 <p className="mb-3 text-sm text-gray-700">
                     Portal job <span className="font-semibold">{result.job.referenceNo || result.job.title}</span>{" "}
-                    {result.job.created ? "was created for this client." : "was updated."}
+                    {result.job.created
+                        ? "was created for this client."
+                        : result.job.linked
+                          ? "already existed in the portal and is now linked to Recruitly (nothing on it was replaced)."
+                          : "was updated."}
                 </p>
             ) : null}
             <div className="flex flex-wrap gap-2 text-xs">
@@ -634,7 +638,7 @@ export default function RecruitlyImportPage() {
                         freshPipeline: i === 0,
                     }),
                 });
-                if (json.job) job = job ? { ...json.job, created: job.created || json.job.created } : json.job;
+                if (json.job) job = job ? { ...json.job, created: job.created || json.job.created, linked: job.linked || json.job.linked } : json.job;
                 calls += Number(json.recruitlyCalls) || 0;
                 for (const r of json.results || []) results.set(`${r.outcome === "removed" ? "removed:" : ""}${r.candidateId}`, r);
                 setImportProgress({ done: Math.min(i + IMPORT_BATCH, candidateIds.length), total: candidateIds.length });
@@ -1114,7 +1118,24 @@ export default function RecruitlyImportPage() {
                 >
                     {importError ? <ErrorBox message={importError} /> : null}
                     {importResult ? <ImportResult result={importResult} /> : null}
-                    <div className="mt-5 flex justify-end">
+                    <div className="mt-5 flex justify-end gap-3">
+                        {importError ? (
+                            // Same candidates again (the selection is kept when an import fails);
+                            // re-importing ones already done is safe: they come back "updated".
+                            // Reopens the Import dialog so its progress ("Importing 1–3 of N…") shows.
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setImportResult(null);
+                                    setImportError("");
+                                    setConfirm({ kind: "import" });
+                                    runImport();
+                                }}
+                                className="rounded-lg border border-red-700 px-5 py-2 text-sm font-medium text-red-700 hover:bg-red-50"
+                            >
+                                Try again
+                            </button>
+                        ) : null}
                         <button
                             type="button"
                             autoFocus
