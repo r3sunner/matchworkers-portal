@@ -357,10 +357,11 @@ export function mapMaritalStatus(value) {
     return match ? { value: match, note: "" } : { value: "", note: `Marital status "${text(value)}" is not in the portal list` };
 }
 
-// Recruitly: Basic, Good, Poor. Portal: Average, Basic, Below Basic, Excellent.
-// Only exact matches are filled until Matchworkers confirms how "Good" and
-// "Poor" should appear; anything else is left empty and flagged.
-export const ENGLISH_LEVEL_MAP = { basic: "Basic" };
+// Recruitly: Good, Basic, Poor. Recruitly's words were added to the portal list
+// (config/enums.json: Excellent, Good, Average, Basic, Below Basic, Poor), so they
+// are copied as they are (17 Nov; to confirm with Matchworkers). Anything else is
+// left empty and flagged.
+export const ENGLISH_LEVEL_MAP = { good: "Good", basic: "Basic", poor: "Poor" };
 
 export function mapEnglishLevel(value) {
     const wanted = text(value).toLowerCase();
@@ -368,7 +369,7 @@ export function mapEnglishLevel(value) {
     const match = ENGLISH_LEVEL_MAP[wanted];
     return match
         ? { value: match, note: "" }
-        : { value: "", note: `English level "${text(value)}" has no portal match yet; left empty` };
+        : { value: "", note: `English level "${text(value)}" is not in the portal list; left empty` };
 }
 
 export function toPortalCandidate(candidate) {

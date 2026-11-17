@@ -1,7 +1,7 @@
 {
   "genders": ["Male", "Female", "Undisclosed"],
   "maritalStatus": ["Single", "Married", "Divorced", "Widowed"],
-  "englishLevel": ["Average", "Basic", "Below Basic", "Excellent"],
+  "englishLevel": ["Excellent", "Good", "Average", "Basic", "Below Basic", "Poor"],
   "jobStatus": ["Available", "Working", "On Hold", "Close", "Hired", "Offered"],
    "jobType": ["Permanent", "Contract", "Seasonal", "Temporary", "Part Time"],
    "showToCandidate":["Only Job Title","Complete Job","Job and Company"],

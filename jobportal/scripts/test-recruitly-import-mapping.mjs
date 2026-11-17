@@ -127,11 +127,12 @@ test("marital status matches the portal list (same values in both systems)", () 
     assert.match(mapMaritalStatus("Engaged").note, /not in the portal list/);
 });
 
-test("English level: only exact matches filled until Good/Poor are decided", () => {
+test("English level: Good, Basic and Poor copied as in Recruitly; anything else flagged", () => {
     assert.deepEqual(mapEnglishLevel("Basic"), { value: "Basic", note: "" });
-    assert.equal(mapEnglishLevel("Good").value, "");
-    assert.match(mapEnglishLevel("Good").note, /no portal match yet/);
-    assert.equal(mapEnglishLevel("Poor").value, "");
+    assert.deepEqual(mapEnglishLevel("Good"), { value: "Good", note: "" });
+    assert.deepEqual(mapEnglishLevel("poor"), { value: "Poor", note: "" });
+    assert.equal(mapEnglishLevel("Fluent").value, "");
+    assert.match(mapEnglishLevel("Fluent").note, /not in the portal list/);
 });
 
 test("employment history: current company, previous company, experience in years", () => {
