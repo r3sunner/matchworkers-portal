@@ -1,7 +1,8 @@
 // GET /api/recruitly/candidates/<candidateId>/ – staff only.
 // One Recruitly candidate as the import will see it: the mapped fields only,
 // plus the Full Candidate Profile and Photo files (details only, no download).
-// Two Recruitly calls.
+// Email and mobile are left out: the import only compares them, never passes
+// them on. Two Recruitly calls.
 import { NextResponse } from "next/server";
 import { verifyStaffSession } from "@/lib/server/requireStaffSession";
 import {
@@ -45,9 +46,11 @@ export async function GET(req, { params }) {
             uploadedOn: file?.uploadedOn ?? null,
         });
 
+        const { email, mobile, ...candidate } = toImportCandidate(profile);
+
         return NextResponse.json({
             ok: true,
-            candidate: toImportCandidate(profile),
+            candidate,
             files: files.map(toFile),
             latest: {
                 fullCandidateProfile: latest.fullCandidateProfile ? toFile(latest.fullCandidateProfile) : null,
