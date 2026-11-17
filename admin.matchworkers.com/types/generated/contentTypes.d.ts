@@ -874,6 +874,62 @@ export interface ApiPiplineChatPiplineChat extends Struct.CollectionTypeSchema {
   };
 }
 
+export interface ApiRecruitlyStageMapRecruitlyStageMap
+  extends Struct.CollectionTypeSchema {
+  collectionName: 'recruitly_stage_maps';
+  info: {
+    description: 'Which portal stage each Recruitly pipeline sub-stage shows as. Matched by the Recruitly stage ID, so renaming a stage in Recruitly keeps its mapping. Portal Stage empty = the agreed default. Changes apply to the next import (within a minute). Rows are added automatically; only change Portal Stage. A row created here by hand is ignored.';
+    displayName: 'Recruitly Stage Mapping';
+    pluralName: 'recruitly-stage-maps';
+    singularName: 'recruitly-stage-map';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  attributes: {
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<
+      'oneToMany',
+      'api::recruitly-stage-map.recruitly-stage-map'
+    > &
+      Schema.Attribute.Private;
+    note: Schema.Attribute.Text;
+    portalStage: Schema.Attribute.Enumeration<
+      [
+        'Not shown',
+        'Suggested',
+        'Shortlisted',
+        'Requested Interview',
+        'Interviewed',
+        'Offered',
+        'Immigration',
+      ]
+    >;
+    publishedAt: Schema.Attribute.DateTime;
+    recruitlyStatus: Schema.Attribute.Enumeration<
+      [
+        'SOURCED',
+        'APPLIED',
+        'SHORTLIST',
+        'CV_SENT',
+        'INTERVIEW',
+        'OFFER',
+        'PLACED',
+      ]
+    >;
+    stageId: Schema.Attribute.String &
+      Schema.Attribute.Required &
+      Schema.Attribute.Unique;
+    stageName: Schema.Attribute.String & Schema.Attribute.Required;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+  };
+}
+
 export interface ApiStaffStaff extends Struct.CollectionTypeSchema {
   collectionName: 'staffs';
   info: {
@@ -1436,6 +1492,7 @@ declare module '@strapi/strapi' {
       'api::job.job': ApiJobJob;
       'api::log.log': ApiLogLog;
       'api::pipline-chat.pipline-chat': ApiPiplineChatPiplineChat;
+      'api::recruitly-stage-map.recruitly-stage-map': ApiRecruitlyStageMapRecruitlyStageMap;
       'api::staff.staff': ApiStaffStaff;
       'plugin::content-releases.release': PluginContentReleasesRelease;
       'plugin::content-releases.release-action': PluginContentReleasesReleaseAction;

@@ -1,7 +1,8 @@
 // GET /api/recruitly/jobs/<jobId>/pipeline/ – staff only.
 // Pipeline for one Recruitly job, rejected entries removed (R1), each entry
-// with the portal stage it would get (Q7). One Recruitly call, plus the
-// placement list only when the job has a Placed entry.
+// with the portal stage it would get (Q7, stage mapping table). One Recruitly
+// call, plus the placement list only when the job has a Placed entry, plus
+// Recruitly's stage list at most every 5 minutes.
 import { NextResponse } from "next/server";
 import { verifyStaffSession } from "@/lib/server/requireStaffSession";
 import {
@@ -11,6 +12,7 @@ import {
     placementsForJob,
 } from "@/lib/server/recruitly";
 import { ACTION, mapPipelineEntry, placementStatusFor } from "@/lib/server/recruitlyStages";
+import { loadStageLookup } from "@/lib/server/recruitlyStageMap";
 
 export const runtime = "nodejs";
 
@@ -29,12 +31,13 @@ export async function GET(req, { params }) {
 
         const fresh = req.nextUrl.searchParams.get("fresh") === "1";
         const placementList = await placementsForJob(active, jobId, { counter, fresh });
+        const stageLookup = await loadStageLookup({ counter, fresh });
 
         const entries = active.map((entry) => {
             const placementStatus = placementList
                 ? placementStatusFor(placementList.placements, entry?.candidateId, entry?.jobId || jobId)
                 : null;
-            const mapped = mapPipelineEntry(entry, { placementStatus });
+            const mapped = mapPipelineEntry(entry, { placementStatus, stageLookup });
 
             return {
                 pipelineId: entry?.id ?? null,

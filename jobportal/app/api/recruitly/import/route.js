@@ -29,6 +29,7 @@ import {
     toImportCandidate,
 } from "@/lib/server/recruitly";
 import { ACTION, mapPipelineEntry, placementStatusFor } from "@/lib/server/recruitlyStages";
+import { loadStageLookup } from "@/lib/server/recruitlyStageMap";
 import { PortalStrapiError, strapiRequest } from "@/lib/server/portalStrapi";
 import { syncCandidateFiles } from "@/lib/server/recruitlyFiles";
 import { normalizeEmail, phoneDigits, referenceChange, samePhone, toPortalCandidate } from "@/lib/server/recruitlyImportMapping";
@@ -285,6 +286,7 @@ export async function POST(req) {
         const { entries } = await jobPipelineForImport(jobId, { counter, fresh: freshPipeline });
         const active = entries.filter((e) => e?.rejected !== true);
         const placementList = await placementsForJob(active, jobId, { counter });
+        const stageLookup = await loadStageLookup({ counter });
         const roleCache = new Map();
 
         // 1. Decide per candidate from the live pipeline and stage mapping.
@@ -299,7 +301,7 @@ export async function POST(req) {
             const placementStatus = placementList
                 ? placementStatusFor(placementList.placements, entry.candidateId, entry.jobId || jobId)
                 : null;
-            const mapped = mapPipelineEntry(entry, { placementStatus });
+            const mapped = mapPipelineEntry(entry, { placementStatus, stageLookup });
             if (mapped.action !== ACTION.SHOW) {
                 results.push({
                     candidateId,
@@ -382,7 +384,7 @@ export async function POST(req) {
             const placementStatus = placementList
                 ? placementStatusFor(placementList.placements, e.candidateId, e.jobId || jobId)
                 : null;
-            const m = mapPipelineEntry(e, { placementStatus });
+            const m = mapPipelineEntry(e, { placementStatus, stageLookup });
             if (m.action === ACTION.REMOVE) removeReasons.set(String(e.candidateId), m.reason || "Removed in Recruitly");
         }
         const upsertDocIds = new Set(upserts.map((u) => u.candidateDocumentId));

@@ -1,0 +1,35 @@
+{
+  "kind": "collectionType",
+  "collectionName": "recruitly_stage_maps",
+  "info": {
+    "singularName": "recruitly-stage-map",
+    "pluralName": "recruitly-stage-maps",
+    "displayName": "Recruitly Stage Mapping",
+    "description": "Which portal stage each Recruitly pipeline sub-stage shows as. Matched by the Recruitly stage ID, so renaming a stage in Recruitly keeps its mapping. Portal Stage empty = the agreed default. Changes apply to the next import (within a minute). Rows are added automatically; only change Portal Stage. A row created here by hand is ignored."
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "attributes": {
+    "stageName": {
+      "type": "string",
+      "required": true
+    },
+    "recruitlyStatus": {
+      "type": "enumeration",
+      "enum": ["SOURCED", "APPLIED", "SHORTLIST", "CV_SENT", "INTERVIEW", "OFFER", "PLACED"]
+    },
+    "portalStage": {
+      "type": "enumeration",
+      "enum": ["Not shown", "Suggested", "Shortlisted", "Requested Interview", "Interviewed", "Offered", "Immigration"]
+    },
+    "stageId": {
+      "type": "string",
+      "required": true,
+      "unique": true
+    },
+    "note": {
+      "type": "text"
+    }
+  }
+}

@@ -3,8 +3,11 @@
 //
 // Stored portal values match what the portal already saves in
 // candidateProcessList ("Hired Candidate" is shown as "Offered").
-// The editable mapping table in the Strapi admin replaces SUB_STAGE_TO_PORTAL
-// later; the rules below stay.
+// The editable table in the Strapi admin (Recruitly Stage Mapping, matched by
+// stage ID: see recruitlyStageMap.js) decides the sub-stages it has a portal
+// stage for; SUB_STAGE_TO_PORTAL and STATUS_DEFAULT are the agreed defaults for
+// the rest. Rejected and Placed rules always apply; Sourcing/Preparing are
+// hidden by default but the table can show them.
 
 export const PORTAL_STAGE = {
     SUGGESTED: "Suggested Candidate",
@@ -26,7 +29,8 @@ export const ACTION = {
 export const PLACEMENT_LANDED_WORKING = "Landed - Working with our client";
 export const PLACEMENT_LANDED_AWAITING = "Landed - Awaiting placement";
 
-// Recruitly sub-stage name → portal stage. null = not shown yet.
+// Recruitly sub-stage name → portal stage. null = not shown yet. Also fills
+// the stage mapping table the first time it is used.
 const SUB_STAGE_TO_PORTAL = {
     "spec send": null,
     "matching": null,
@@ -59,7 +63,7 @@ const STATUS_DEFAULT = {
 
 const ALWAYS_HIDDEN_STATUSES = new Set(["SOURCED", "APPLIED"]);
 
-function normalize(value) {
+export function normalizeStageName(value) {
     return String(value || "")
         .toLowerCase()
         .replace(/[–—]/g, "-")
@@ -74,9 +78,11 @@ function result(action, portalStage, reason) {
 // entry: { status, stage, rejected } from the Recruitly pipeline.
 // placementStatus: the placement's status name for this candidate and job,
 // or null when there is no placement. Only used for PLACED entries.
-export function mapPipelineEntry(entry, { placementStatus = null } = {}) {
+// stageLookup: from the stage mapping table, Map of normalised sub-stage name →
+// portal stage (null = not shown). Sub-stages missing from it use the defaults.
+export function mapPipelineEntry(entry, { placementStatus = null, stageLookup = null } = {}) {
     const status = String(entry?.status || "").toUpperCase();
-    const subStage = normalize(entry?.stage);
+    const subStage = normalizeStageName(entry?.stage);
 
     if (entry?.rejected === true) {
         return result(ACTION.REMOVE, null, "Rejected in Recruitly");
@@ -86,15 +92,27 @@ export function mapPipelineEntry(entry, { placementStatus = null } = {}) {
         if (!placementStatus) {
             return result(ACTION.SHOW, PORTAL_STAGE.IMMIGRATION, "Placed, no placement record yet");
         }
-        if (normalize(placementStatus) === normalize(PLACEMENT_LANDED_WORKING)) {
+        if (normalizeStageName(placementStatus) === normalizeStageName(PLACEMENT_LANDED_WORKING)) {
             return result(ACTION.SHOW, PORTAL_STAGE.PLACED, "");
         }
         // Agreed 13 Nov 2026: the Immigration team creates the placement on landing
         // day with this status, so the candidate stays visible at Immigration.
-        if (normalize(placementStatus) === normalize(PLACEMENT_LANDED_AWAITING)) {
+        if (normalizeStageName(placementStatus) === normalizeStageName(PLACEMENT_LANDED_AWAITING)) {
             return result(ACTION.SHOW, PORTAL_STAGE.IMMIGRATION, "Landed, awaiting placement");
         }
         return result(ACTION.REMOVE, null, `Placement status: ${placementStatus}`);
+    }
+
+    // The stage mapping table decides first, Sourcing and Preparing included, so
+    // Matchworkers can choose to show those too (17 Nov). Rejected and Placed above stay fixed.
+    if (subStage && stageLookup?.has(subStage)) {
+        const portalStage = stageLookup.get(subStage);
+        if (portalStage) return result(ACTION.SHOW, portalStage, "");
+        return result(
+            ACTION.HIDE,
+            null,
+            ALWAYS_HIDDEN_STATUSES.has(status) ? "Before Sent to Client" : "Not shown at this stage (stage mapping table)"
+        );
     }
 
     if (ALWAYS_HIDDEN_STATUSES.has(status)) {
@@ -126,4 +144,11 @@ export function placementStatusFor(placements, candidateId, jobId) {
         (p) => p?.candidateId === candidateId && p?.jobId === jobId
     );
     return match?.statusName || null;
+}
+
+// The agreed default for one Recruitly sub-stage (no table): the portal stage,
+// or null when not shown. Placed is decided by the placement status instead.
+export function defaultPortalStage(stageName, status) {
+    const r = mapPipelineEntry({ status, stage: stageName });
+    return r.action === ACTION.SHOW ? r.portalStage : null;
 }

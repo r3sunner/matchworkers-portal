@@ -215,6 +215,11 @@ export function listJobsCached({ counter, fresh } = {}) {
     return cachedList("jobs", () => listJobs({ counter }), { fresh });
 }
 
+// Stage / status lists: settings, not personal data. Read at most every 5 minutes.
+export function getMasterdataCached({ counter, fresh } = {}) {
+    return cachedList("masterdata", () => getMasterdata({ counter }), { fresh });
+}
+
 export function listAllPlacementsCached({ counter, fresh } = {}) {
     return cachedList("placements", () => listAllPlacements({ counter }), { fresh });
 }
