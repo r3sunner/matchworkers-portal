@@ -38,6 +38,40 @@ export function tagFor(recruitlyFileId) {
     return `${RECRUITLY_FILE_TAG}${recruitlyFileId}`;
 }
 
+// Linking the copied files to a candidate (one PUT) runs one candidate at a
+// time across the whole portal: on the live database, two of these at the same
+// moment can deadlock in Strapi's file-link table (seen 18 Nov 2026, Release 1).
+// Downloads and uploads still run in parallel; only this short save waits.
+// A server error (e.g. a deadlock) is retried once; the save only sets the
+// candidate's CV / photo, so repeating it is safe.
+const linkQueue = (globalThis.__recruitlyFileLinkQueue ??= { tail: Promise.resolve() });
+
+function oneAtATime(task) {
+    const run = linkQueue.tail.then(task, task);
+    linkQueue.tail = run.catch(() => {});
+    return run;
+}
+
+export async function saveFileLinks(portalDocumentId, update, { request = strapiRequest, retryDelayMs = 500 } = {}) {
+    const put = () =>
+        request(`/candidates/${encodeURIComponent(portalDocumentId)}`, {
+            method: "PUT",
+            query: { status: "published" },
+            body: { data: update },
+        });
+
+    return oneAtATime(async () => {
+        try {
+            return await put();
+        } catch (error) {
+            if (!(Number(error?.status) >= 500)) throw error;
+            console.warn(`[RECRUITLY_FILES] Saving file links failed (${error?.message}); retrying once`);
+            await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+            return put();
+        }
+    });
+}
+
 const KINDS = [
     { key: "fullCandidateProfile", field: "CV", label: "Full Candidate Profile", missing: "No Full Candidate Profile in Recruitly; imported without a CV" },
     { key: "photo", field: "profileImage", label: "Photo", missing: "No photo in Recruitly; the portal shows the placeholder" },
@@ -109,11 +143,7 @@ export async function syncCandidateFiles({ recruitlyCandidateId, portalDocumentI
     result.notes.push(...notes.CV, ...notes.profileImage);
 
     if (Object.keys(update).length) {
-        await strapiRequest(`/candidates/${encodeURIComponent(portalDocumentId)}`, {
-            method: "PUT",
-            query: { status: "published" },
-            body: { data: update },
-        });
+        await saveFileLinks(portalDocumentId, update);
         // Only after the candidate points at the new file: remove the old one the import had added.
         for (const id of toDelete) {
             try {

@@ -42,7 +42,7 @@ globalThis.fetch = async (url, options = {}) => {
     return json({ error: { message: `unexpected ${method} ${u.href}` } }, 500);
 };
 
-const { syncCandidateFiles, tagFor, contentTypeFor } = await import("../lib/server/recruitlyFiles.js");
+const { syncCandidateFiles, saveFileLinks, tagFor, contentTypeFor } = await import("../lib/server/recruitlyFiles.js");
 
 const file = (id, categoryId, name, uploadedOn) => ({ id, categoryId, name, extension: name.split(".").pop(), size: 3, uploadedOn });
 const run = () => syncCandidateFiles({ recruitlyCandidateId: "rc1", portalDocumentId: "doc1" });
@@ -159,4 +159,57 @@ test("file list passed in by the import: not listed again; CV and photo download
     } finally {
         globalThis.fetch = realFetch;
     }
+});
+
+// 18 Nov 2026 (live): two candidates linking files at the same moment deadlocked
+// in Strapi's file-link table. Saves now run one at a time, with one retry.
+test("file links are saved one candidate at a time", async () => {
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const order = [];
+    const request = async (path) => {
+        inFlight++;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        await new Promise((r) => setTimeout(r, 15));
+        order.push(path);
+        inFlight--;
+        return { data: {} };
+    };
+    await Promise.all(["a", "b", "c"].map((id) => saveFileLinks(id, { CV: 1 }, { request })));
+    assert.equal(maxInFlight, 1);
+    assert.deepEqual(order, ["/candidates/a", "/candidates/b", "/candidates/c"]);
+});
+
+test("a server error (deadlock) is retried once", async () => {
+    let calls = 0;
+    const request = async () => {
+        calls++;
+        if (calls === 1) throw Object.assign(new Error("Internal Server Error"), { status: 500 });
+        return { data: { ok: true } };
+    };
+    const res = await saveFileLinks("d1", { CV: 1 }, { request, retryDelayMs: 1 });
+    assert.equal(calls, 2);
+    assert.deepEqual(res, { data: { ok: true } });
+});
+
+test("a second server error is reported, not retried again", async () => {
+    let calls = 0;
+    const request = async () => {
+        calls++;
+        throw Object.assign(new Error("Internal Server Error"), { status: 500 });
+    };
+    await assert.rejects(saveFileLinks("d2", { CV: 1 }, { request, retryDelayMs: 1 }), /Internal Server Error/);
+    assert.equal(calls, 2);
+});
+
+test("a 4xx error is not retried, and the queue keeps working after a failure", async () => {
+    let calls = 0;
+    const bad = async () => {
+        calls++;
+        throw Object.assign(new Error("Bad Request"), { status: 400 });
+    };
+    await assert.rejects(saveFileLinks("d3", { CV: 1 }, { request: bad, retryDelayMs: 1 }), /Bad Request/);
+    assert.equal(calls, 1);
+    const ok = await saveFileLinks("d4", { CV: 1 }, { request: async () => ({ data: "next" }) });
+    assert.deepEqual(ok, { data: "next" });
 });
