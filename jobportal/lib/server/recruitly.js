@@ -137,7 +137,10 @@ export async function recruitlyRequest(method, path, { params, counter, binary =
                 signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
             });
         } catch (error) {
-            console.error(`[RECRUITLY] GET ${path} failed after ${Date.now() - startedAt}ms:`, error?.name || "Error");
+            // Low-level reason (e.g. ECONNRESET, ENOTFOUND, UND_ERR_CONNECT_TIMEOUT): the code
+            // only, never the message or the address (the address carries the key).
+            const code = String(error?.cause?.code || error?.code || "").replace(/[^A-Z0-9_]/g, "").slice(0, 40);
+            console.error(`[RECRUITLY] GET ${path} failed after ${Date.now() - startedAt}ms:`, error?.name || "Error", code || "");
             if (attempt === 1) {
                 await sleep(RETRY_DELAY_MS);
                 continue;

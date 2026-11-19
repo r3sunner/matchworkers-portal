@@ -334,6 +334,19 @@ test("two dropped connections in a row give a clear error", async () => {
     assert.equal(sent.length, 2);
 });
 
+test("a failed connection logs the low-level code (e.g. ECONNRESET), never the key or address", async () => {
+    nextResponse = () => {
+        throw new TypeError(`fetch failed https://api.recruitly.io/x?apiKey=${FAKE_KEY}`, {
+            cause: Object.assign(new Error(`socket hang up ${FAKE_KEY}`), { code: "ECONNRESET" }),
+        });
+    };
+    await assert.rejects(recruitly.recruitlyRequest("GET", "/api/nova/jobs/list"), /Recruitly request failed/);
+    const failures = logs.filter((line) => line.includes("failed after"));
+    assert.equal(failures.length, 2);
+    assert.ok(failures.every((line) => line.includes("TypeError ECONNRESET")), failures.join(" | "));
+    assert.ok(logs.every((line) => !line.includes(FAKE_KEY) && !line.includes("apiKey")));
+});
+
 test("placementsForJob: first-page result is reused for the same Placed candidates; fresh or a new Placed candidate reads again", async () => {
     globalThis.__recruitlyListCache?.clear();
     nextResponse = placementPages(751, 0, WANTED);
