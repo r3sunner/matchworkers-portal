@@ -286,7 +286,82 @@ const OUTCOME = {
     removed: { label: "Taken off job", style: "bg-gray-100 text-gray-700 ring-gray-300" },
 };
 
-function ImportResult({ result }) {
+// Name-only review row: staff decide. "Same person – link" updates and links
+// the chosen portal candidate; "Import as new candidate" creates a new one
+// (a different person with a similar name). Each asks once more before saving.
+function ReviewActions({ row, busy, onResolve }) {
+    const [asking, setAsking] = useState(null); // { kind: "link", match } | { kind: "new" }
+    const matches = row.possibleMatches || [];
+
+    if (asking) {
+        const link = asking.kind === "link";
+        return (
+            <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-gray-700">
+                {link ? (
+                    <p>
+                        Link <span className="font-semibold">{row.name}</span> to the portal candidate{" "}
+                        <span className="font-semibold">
+                            {asking.match.fullName}
+                            {asking.match.reference ? ` (${asking.match.reference})` : ""}
+                        </span>
+                        ? That record is updated from Recruitly and gets the CA number; its old reference is kept. Nothing new is
+                        created.
+                    </p>
+                ) : (
+                    <p>
+                        Only if <span className="font-semibold">{row.name}</span> is a{" "}
+                        <span className="font-semibold">different person</span> from the portal candidate
+                        {matches.length === 1 ? "" : "s"} above. A new candidate is created.
+                    </p>
+                )}
+                <div className="mt-2 flex gap-2">
+                    <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => setAsking(null)}
+                        className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => onResolve(link ? { linkTo: asking.match.documentId } : { asNew: true })}
+                        className="rounded-lg bg-red-700 px-3 py-1.5 font-medium text-white hover:bg-red-800 disabled:opacity-60"
+                    >
+                        {busy ? "Importing…" : link ? "Yes, same person – link" : "Yes, different person – create"}
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="mt-2 flex flex-wrap gap-2">
+            {matches.map((m) => (
+                <button
+                    key={m.documentId}
+                    type="button"
+                    disabled={busy}
+                    onClick={() => setAsking({ kind: "link", match: m })}
+                    className="rounded-lg border border-green-300 bg-white px-3 py-1.5 text-xs font-medium text-green-800 hover:bg-green-50 disabled:opacity-50"
+                >
+                    Same person – link{matches.length > 1 ? ` to ${m.fullName}` : ""}
+                </button>
+            ))}
+            <button
+                type="button"
+                disabled={busy}
+                onClick={() => setAsking({ kind: "new" })}
+                className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            >
+                Import as new candidate
+            </button>
+        </div>
+    );
+}
+
+function ImportResult({ result, onResolve, resolvingId }) {
     const s = result?.summary || {};
     const rows = result?.results || [];
     return (
@@ -348,6 +423,14 @@ function ImportResult({ result }) {
                                             {n}
                                         </div>
                                     ))}
+                                    {r.outcome === "review" && r.nameOnly && onResolve ? (
+                                        <ReviewActions
+                                            row={r}
+                                            busy={resolvingId === r.candidateId}
+                                            onResolve={(choice) => onResolve(r.candidateId, choice)}
+                                        />
+                                    ) : null}
+                                    {r.resolveError ? <div className="mt-1 text-red-700">{r.resolveError}</div> : null}
                                 </td>
                             </tr>
                         ))}
@@ -585,6 +668,7 @@ export default function RecruitlyImportPage() {
     const [linkingJob, setLinkingJob] = useState(false);
     const [jobLinkError, setJobLinkError] = useState("");
     const [changingJob, setChangingJob] = useState(false);
+    const [resolvingId, setResolvingId] = useState(""); // review row being linked / imported as new
 
     const setupRequest = useRef(0);
     const jobsRequest = useRef(0);
@@ -949,6 +1033,51 @@ export default function RecruitlyImportPage() {
             setConfirm({ kind: "result" });
             // Imported candidates lock the portal job link (no Change / Remove link).
             if (results.size) loadPortalJobs(jobId);
+        }
+    }
+
+    // Review row → "Same person – link" ({ linkTo: portal documentId }) or "Import as
+    // new candidate" ({ asNew: true }): imports that one candidate, then replaces
+    // its row in the result.
+    async function resolveReview(candidateId, choice) {
+        if (!jobId || !candidateId) return;
+        setResolvingId(candidateId);
+        const patch = (row) =>
+            setImportResult((prev) => {
+                if (!prev) return prev;
+                const results = prev.results.map((r) => (r.candidateId === candidateId ? row(r) : r));
+                const count = (o) => results.filter((r) => r.outcome === o).length;
+                return {
+                    ...prev,
+                    results,
+                    summary: {
+                        created: count("created"),
+                        updated: count("updated"),
+                        removed: count("removed"),
+                        review: count("review"),
+                        skipped: count("skipped"),
+                        failed: count("failed"),
+                    },
+                };
+            });
+        try {
+            const json = await fetchJson("/api/recruitly/import/", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    jobId,
+                    clientDocumentId,
+                    candidateIds: [candidateId],
+                    ...(choice?.linkTo ? { linkTo: { [candidateId]: choice.linkTo } } : { newCandidateIds: [candidateId] }),
+                    freshPipeline: false,
+                }),
+            });
+            const row = (json.results || []).find((r) => r.candidateId === candidateId);
+            if (row) patch(() => row);
+        } catch (error) {
+            patch((r) => ({ ...r, resolveError: error.message }));
+        } finally {
+            setResolvingId("");
         }
     }
 
@@ -1554,7 +1683,9 @@ export default function RecruitlyImportPage() {
                     }}
                 >
                     {importError ? <ErrorBox message={importError} /> : null}
-                    {importResult ? <ImportResult result={importResult} /> : null}
+                    {importResult ? (
+                        <ImportResult result={importResult} onResolve={resolveReview} resolvingId={resolvingId} />
+                    ) : null}
                     <div className="mt-5 flex justify-end gap-3">
                         {importError ? (
                             // Same candidates again (the selection is kept when an import fails);

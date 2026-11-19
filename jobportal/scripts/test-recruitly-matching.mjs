@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 process.env.STRAPI_BASE_URL = "http://strapi.test/api";
 process.env.STRAPI_TOKEN = "FAKE-TOKEN";
 
-const { nameKey, suggestForJob, mergeSuggestions, normalizeCaNumber } = await import("../lib/server/recruitlyMatching.js");
+const { nameKey, namesLookAlike, suggestForJob, mergeSuggestions, normalizeCaNumber } = await import("../lib/server/recruitlyMatching.js");
 
 test("names compared without case, accents, punctuation or word order", () => {
     assert.equal(nameKey("Iván  Petrov"), nameKey("petrov, IVAN"));
@@ -70,4 +70,29 @@ test("CA number typed in any common form", () => {
     assert.equal(normalizeCaNumber("CAN_57"), "");
     assert.equal(normalizeCaNumber("Ivan"), "");
     assert.equal(normalizeCaNumber(""), "");
+});
+
+// ---- Import: same person, name written differently → "Needs review" ----
+test("import name check: word order, accents, case and punctuation do not matter", () => {
+    assert.equal(namesLookAlike("Ivan Petrov", "Petrov Ivan"), true);
+    assert.equal(namesLookAlike("Ivan Petrov", "Iván PETROV"), true);
+    assert.equal(namesLookAlike("Petrov, Ivan", "ivan petrov"), true);
+});
+
+test("import name check: an added middle name still counts as alike", () => {
+    assert.equal(namesLookAlike("Ivan Petrov", "Ivan Georgiev Petrov"), true);
+    assert.equal(namesLookAlike("Maria Elena Lopez Garcia", "Maria Lopez"), true);
+});
+
+test("import name check: different people are not flagged", () => {
+    assert.equal(namesLookAlike("Ivan Petrov", "Ivan Ivanov"), false, "same first name only");
+    assert.equal(namesLookAlike("Ivan Petrov", "Petra Ivanova"), false);
+    assert.equal(namesLookAlike("Ivan", "Ivan Petrov"), false, "one-word name never matched on part of a longer name");
+    assert.equal(namesLookAlike("Ivan Ivan", "Ivan Petrov"), false, "a repeated word must appear twice");
+});
+
+test("import name check: empty names never match", () => {
+    assert.equal(namesLookAlike("", "Ivan Petrov"), false);
+    assert.equal(namesLookAlike(null, null), false);
+    assert.equal(namesLookAlike("Ivan", "ivan"), true, "same single name, exact");
 });

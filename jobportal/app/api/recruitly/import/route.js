@@ -34,9 +34,10 @@ import {
 } from "@/lib/server/recruitly";
 import { ACTION, mapPipelineEntry, placementStatusFor } from "@/lib/server/recruitlyStages";
 import { loadStageLookup } from "@/lib/server/recruitlyStageMap";
-import { PortalStrapiError, strapiRequest } from "@/lib/server/portalStrapi";
+import { PortalStrapiError, strapiFetchAll, strapiRequest } from "@/lib/server/portalStrapi";
 import { syncCandidateFiles } from "@/lib/server/recruitlyFiles";
 import { normalizeEmail, phoneDigits, referenceChange, samePhone, toPortalCandidate } from "@/lib/server/recruitlyImportMapping";
+import { namesLookAlike } from "@/lib/server/recruitlyMatching";
 import {
     JobImportError,
     documentIdsForRecruitlyIds,
@@ -84,8 +85,21 @@ async function findCandidates(filters) {
     return Array.isArray(json?.data) ? json.data : [];
 }
 
+// All portal candidates' names, read once per import request and only when a
+// candidate is not found by Recruitly ID, CA number, email or mobile.
+function portalNameList() {
+    let rows = null;
+    return async () => {
+        if (!rows) rows = strapiFetchAll("/candidates", { fields: ["documentId", "fullName", "caNumber", "referenceNumber"] });
+        return rows;
+    };
+}
+
 // Returns { kind: "match", candidate, by } | { kind: "review", reason, possible } | { kind: "none" }
-async function findExisting(data, { email, mobile }) {
+// allowNew: staff confirmed on the review list that this is a different person
+// from the similar-named portal candidate ("Import as new candidate"). Only the
+// name check is skipped; Recruitly ID, CA number, email and mobile still match.
+async function findExisting(data, { email, mobile, loadPortalNames, allowNew = false }) {
     const steps = [];
     if (data.recruitlyId) steps.push({ by: "Recruitly ID", filters: { recruitlyId: { $eq: data.recruitlyId } } });
     if (data.caNumber) steps.push({ by: "CA number", filters: { caNumber: { $eq: data.caNumber } } });
@@ -126,19 +140,51 @@ async function findExisting(data, { email, mobile }) {
         return { kind: "match", candidate: found, by: step.by };
     }
 
-    // Same name only: never linked automatically, never created.
-    if (data.fullName) {
-        const sameName = await findCandidates({ fullName: { $eqi: data.fullName } });
-        if (sameName.length > 0) {
+    // Same or similar name only (word order, accents, a middle name): never linked
+    // automatically, never created; staff decide on the review list.
+    if (data.fullName && loadPortalNames && !allowNew) {
+        const alike = (await loadPortalNames()).filter((c) => namesLookAlike(c?.fullName, data.fullName));
+        if (alike.length > 0) {
+            const exact = alike.every((c) => String(c?.fullName || "").trim().toLowerCase() === String(data.fullName).trim().toLowerCase());
             return {
                 kind: "review",
-                reason: "A portal candidate with the same name exists (name only, not linked automatically)",
-                possible: sameName.map(summaryOf),
+                nameOnly: true,
+                reason: exact
+                    ? "A portal candidate with the same name exists (name only, not linked automatically)"
+                    : "A portal candidate with a similar name exists (name only, not linked automatically)",
+                possible: alike.slice(0, 10).map(summaryOf),
             };
         }
     }
 
     return { kind: "none" };
+}
+
+// Review list → "Same person – link": staff chose the portal candidate this
+// Recruitly candidate is. That candidate is updated and linked (Recruitly ID, CA
+// number as reference, old reference kept), as a match by email would be.
+// Refused if it is linked to another Recruitly record, or another portal
+// candidate already holds this Recruitly ID or CA number.
+async function chosenMatch(portalDocumentId, data) {
+    const [chosen] = await findCandidates({ documentId: { $eq: portalDocumentId } });
+    if (!chosen) return { kind: "review", reason: "The chosen portal candidate was not found; reload and check", possible: [] };
+    if (chosen.recruitlyId && chosen.recruitlyId !== data.recruitlyId) {
+        return { kind: "review", reason: "The chosen portal candidate is linked to another Recruitly record", possible: [summaryOf(chosen)] };
+    }
+    if (chosen.caNumber && data.caNumber && chosen.caNumber !== data.caNumber) {
+        return { kind: "review", reason: "The chosen portal candidate has a different CA number", possible: [summaryOf(chosen)] };
+    }
+    const or = [{ recruitlyId: { $eq: data.recruitlyId } }];
+    if (data.caNumber) or.push({ caNumber: { $eq: data.caNumber } });
+    const others = (await findCandidates({ $or: or })).filter((c) => c.documentId !== chosen.documentId);
+    if (others.length) {
+        return {
+            kind: "review",
+            reason: "Another portal candidate already has this Recruitly record or CA number",
+            possible: others.map(summaryOf),
+        };
+    }
+    return { kind: "match", candidate: chosen, by: "staff choice (same person)" };
 }
 
 async function findJobRole(title, cache) {
@@ -173,7 +219,7 @@ async function saveCandidate(existing, data) {
     return { documentId: json?.data?.documentId || null, id: json?.data?.id ?? null };
 }
 
-async function importOne({ candidateId, entry, mapped, profile, roleCache, counter }) {
+async function importOne({ candidateId, entry, mapped, profile, roleCache, counter, loadPortalNames, allowNew = false, linkTo = "" }) {
     const base = { candidateId, name: entry?.candidateName || "", reference: "", notes: [] };
 
     if (!profile) return { ...base, outcome: "skipped", reason: "Not found in Recruitly" };
@@ -186,9 +232,12 @@ async function importOne({ candidateId, entry, mapped, profile, roleCache, count
 
     if (!data.recruitlyId) return { ...base, outcome: "skipped", reason: "Recruitly record has no ID" };
 
-    const match = await findExisting(data, { email: normalizeEmail(source.email), mobile: source.mobile });
+    const match = linkTo
+        ? await chosenMatch(linkTo, data)
+        : await findExisting(data, { email: normalizeEmail(source.email), mobile: source.mobile, loadPortalNames, allowNew });
     if (match.kind === "review") {
-        return { ...base, outcome: "review", reason: match.reason, possibleMatches: match.possible };
+        // nameOnly: the screen offers "Import as new candidate" for this row.
+        return { ...base, outcome: "review", reason: match.reason, possibleMatches: match.possible, nameOnly: Boolean(match.nameOnly) };
     }
 
     const roleId = await findJobRole(source.jobTitle, roleCache);
@@ -215,6 +264,7 @@ async function importOne({ candidateId, entry, mapped, profile, roleCache, count
         throw error;
     }
 
+    if (!existing && allowNew) base.notes.push("Imported as a new candidate: staff confirmed a different person from the similar-named portal candidate");
     return {
         ...base,
         outcome: existing ? "updated" : "created",
@@ -237,6 +287,17 @@ export async function POST(req) {
     const candidateIds = Array.isArray(body?.candidateIds) ? [...new Set(body.candidateIds.map(String))] : [];
     // First request of an import re-reads the pipeline from Recruitly; the rest reuse it.
     const freshPipeline = body?.freshPipeline !== false;
+    // Candidates staff confirmed as different people from a similar-named portal
+    // candidate (review list → "Import as new candidate"). Must be in candidateIds.
+    const newCandidateIds = new Set(
+        (Array.isArray(body?.newCandidateIds) ? body.newCandidateIds : []).map(String).filter((id) => candidateIds.includes(id))
+    );
+    // Review list → "Same person – link": { <Recruitly candidate ID>: <portal candidate documentId> }.
+    const linkTo = Object.fromEntries(
+        Object.entries(body?.linkTo && typeof body.linkTo === "object" ? body.linkTo : {})
+            .map(([k, v]) => [String(k), String(v || "")])
+            .filter(([k, v]) => candidateIds.includes(k) && ID_PATTERN.test(v))
+    );
 
     if (!ID_PATTERN.test(jobId)) {
         return NextResponse.json({ ok: false, error: "Invalid Recruitly job." }, { status: 400 });
@@ -296,6 +357,7 @@ export async function POST(req) {
         const placementList = await placementsForJob(active, jobId, { counter });
         const stageLookup = await loadStageLookup({ counter });
         const roleCache = new Map();
+        const loadPortalNames = portalNameList();
 
         // 1. Decide per candidate from the live pipeline and stage mapping.
         const eligible = [];
@@ -344,7 +406,17 @@ export async function POST(req) {
                 continue;
             }
             try {
-                results.push(await importOne({ ...item, profile, roleCache, counter }));
+                results.push(
+                    await importOne({
+                        ...item,
+                        profile,
+                        roleCache,
+                        counter,
+                        loadPortalNames,
+                        allowNew: newCandidateIds.has(item.candidateId),
+                        linkTo: linkTo[item.candidateId] || "",
+                    })
+                );
             } catch (error) {
                 console.error("[RECRUITLY_IMPORT] Candidate failed:", item.candidateId, error?.message);
                 results.push({

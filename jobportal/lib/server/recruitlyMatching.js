@@ -37,6 +37,27 @@ export function nameKey(name) {
         .join(" ");
 }
 
+// Import (R4): could two names be the same person? Same words in any order,
+// without accents, case or punctuation ("Petrov, Ivan" = "Iván PETROV"), or all
+// words of the shorter name inside the longer one when it has at least two words
+// ("Ivan Petrov" ⊂ "Ivan Georgiev Petrov"). Used only to send a candidate to
+// "Needs review" instead of creating a second copy; never to link automatically.
+export function namesLookAlike(a, b) {
+    const x = nameKey(a);
+    const y = nameKey(b);
+    if (!x || !y) return false;
+    if (x === y) return true;
+    const [short, long] = x.split(" ").length <= y.split(" ").length ? [x.split(" "), y.split(" ")] : [y.split(" "), x.split(" ")];
+    if (short.length < 2) return false;
+    const pool = [...long];
+    for (const w of short) {
+        const at = pool.indexOf(w);
+        if (at === -1) return false;
+        pool.splice(at, 1);
+    }
+    return true;
+}
+
 // Pure: suggestions for one job.
 // portalCandidates: [{ documentId, fullName }] unlinked candidates on the portal job
 // entries: Recruitly pipeline entries of the job with that reference
