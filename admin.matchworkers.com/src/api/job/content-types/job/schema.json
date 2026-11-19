@@ -59,6 +59,9 @@
     "referenceNo": {
       "type": "string"
     },
+    "previousReferenceNo": {
+      "type": "string"
+    },
     "recruitlyJobId": {
       "type": "string",
       "unique": true

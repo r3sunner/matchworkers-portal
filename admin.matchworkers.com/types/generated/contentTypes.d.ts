@@ -794,6 +794,7 @@ export interface ApiJobJob extends Struct.CollectionTypeSchema {
     localizations: Schema.Attribute.Relation<'oneToMany', 'api::job.job'> &
       Schema.Attribute.Private;
     location: Schema.Attribute.String;
+    previousReferenceNo: Schema.Attribute.String;
     publishedAt: Schema.Attribute.DateTime;
     recruitlyJobId: Schema.Attribute.String & Schema.Attribute.Unique;
     referenceNo: Schema.Attribute.String;

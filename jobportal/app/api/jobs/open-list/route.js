@@ -172,6 +172,8 @@ export async function GET(req) {
             filters.$or = [
                 { title: { $containsi: search } },
                 { referenceNo: { $containsi: search } },
+                // A renamed or Recruitly-linked job is still found by its old number.
+                { previousReferenceNo: { $containsi: search } },
                 { client: { companyName: { $containsi: search } } },
             ];
         }

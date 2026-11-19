@@ -46,7 +46,7 @@ export async function loadClient(clientDocumentId) {
     }
 }
 
-const JOB_FIELDS = ["documentId", "title", "referenceNo", "recruitlyJobId", "jobTypeList", "statusList"];
+const JOB_FIELDS = ["documentId", "title", "referenceNo", "previousReferenceNo", "recruitlyJobId", "jobTypeList", "statusList"];
 
 async function findJobs(filters) {
     const json = await strapiRequest("/jobs", {
@@ -200,8 +200,33 @@ async function isLinkLocked(job, loadRecruitlyCandidateIds) {
 const LOCKED_MESSAGE =
     "Candidates have been imported to this portal job, so the link can't be changed here. Ask your administrator if it is wrong.";
 
+// Job numbers (agreed 18 Nov): JB- = Recruitly's number, PJ- = a portal-only job.
+// A portal job joined to a Recruitly job shows the Recruitly number; its own
+// number is kept in previousReferenceNo (still found in search) and given back
+// if the link is removed.
+export function joinFields(job, recruitlyReference) {
+    const reference = String(recruitlyReference || "").trim();
+    const current = String(job?.referenceNo || "").trim();
+    if (!reference || reference === current) return {};
+    const data = { referenceNo: reference };
+    if (current && !String(job?.previousReferenceNo || "").trim()) data.previousReferenceNo = current;
+    return data;
+}
+
+// Fields written when the link is removed: the portal's own number comes back.
+export function unlinkFields(job) {
+    const data = { recruitlyJobId: null };
+    const previous = String(job?.previousReferenceNo || "").trim();
+    if (previous) {
+        data.referenceNo = previous;
+        data.previousReferenceNo = null;
+    }
+    return data;
+}
+
 // Remove link / Change: the portal job stops being linked to this Recruitly job.
-// Only the link is cleared; the job, its candidates, offer letters and chats stay.
+// Only the link is cleared (and the portal's own number given back); the job,
+// its candidates, offer letters and chats stay.
 // Refused once this Recruitly job's candidates are on the job (linkLocked).
 // Returns the job that was unlinked, or null when nothing was linked.
 export async function unlinkPortalJob(recruitlyJob, client, { loadRecruitlyCandidateIds } = {}) {
@@ -216,7 +241,7 @@ export async function unlinkPortalJob(recruitlyJob, client, { loadRecruitlyCandi
         await strapiRequest(`/jobs/${encodeURIComponent(job.documentId)}`, {
             method: "PUT",
             query: { status: "published" },
-            body: { data: { recruitlyJobId: null } },
+            body: { data: unlinkFields(job) },
         });
     }
     return found[0];
@@ -238,7 +263,8 @@ async function loadPortalJob(documentId) {
 // 1. Portal job already linked to this Recruitly job (by Recruitly job ID): used.
 // 2. Otherwise staff's choice, sent with the import:
 //    - portalJobDocumentId: that portal job of this client is joined (Recruitly
-//      job ID stored; title, candidates, offer letters and chats kept);
+//      job ID stored, the Recruitly JB number shown with the portal number kept
+//      as previous reference; title, candidates, offer letters and chats kept);
 //    - createNew: a new portal job is created under this client.
 //    - createIfClientHasNone: a new portal job is created, but only if the client
 //      has no portal job that is not linked to Recruitly (nothing to choose from;
@@ -278,6 +304,7 @@ export async function findOrCreatePortalJob(
         }
         joined = true;
         update.recruitlyJobId = String(recruitlyJob.id);
+        Object.assign(update, joinFields(job, reference));
         if (!job.client?.documentId) update.client = { connect: [client.documentId] };
     } else if (!createNew && !(createIfClientHasNone && (await clientJobs(client)).every((j) => !notLinked(j)))) {
         throw new JobImportError("This Recruitly job is not linked to a portal job yet. Choose the portal job (or create a new one) first.", 409);
@@ -295,6 +322,8 @@ export async function findOrCreatePortalJob(
             });
             if (update.jobTypeList) job.jobTypeList = update.jobTypeList;
             if (update.recruitlyJobId) job.recruitlyJobId = update.recruitlyJobId;
+            if (update.referenceNo) job.referenceNo = update.referenceNo;
+            if (update.previousReferenceNo) job.previousReferenceNo = update.previousReferenceNo;
         }
         return { job, created: false, joined };
     }

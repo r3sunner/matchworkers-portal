@@ -324,7 +324,9 @@ export async function POST(req) {
             );
         }
 
-        const finalReferenceNo = normalizeString(body.referenceNo) || `JB-${jobId || jobDocumentId}`;
+        // PJ- = a job created on the portal; JB- numbers are Recruitly's only (agreed with
+        // Matchworkers 18 Nov), so a portal number can never be mistaken for a Recruitly one.
+        const finalReferenceNo = normalizeString(body.referenceNo) || `PJ-${jobId || jobDocumentId}`;
 
         const updated = await strapiFetch(`jobs/${jobDocumentId}?status=published`, {
             method: "PUT",

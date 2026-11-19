@@ -55,7 +55,7 @@ globalThis.fetch = async (url, options = {}) => {
     return json({ error: { message: `unexpected ${method} ${u.href}` } }, 500);
 };
 
-const { findOrCreatePortalJob, linkLocked, portalJobChoices, rankPortalJobs, titleSimilarity, unlinkPortalJob } = await import(
+const { findOrCreatePortalJob, joinFields, linkLocked, portalJobChoices, rankPortalJobs, titleSimilarity, unlinkFields, unlinkPortalJob } = await import(
     "../lib/server/recruitlyJobImport.js"
 );
 
@@ -330,3 +330,33 @@ test("another client's unlinked jobs do not count", async () => {
     assert.equal(r.created, true);
 });
 
+// ---- Job numbers: JB- = Recruitly, PJ- = portal only (agreed 18 Nov) ----
+test("joining a portal job: it shows the Recruitly number, its own number kept as previous reference", async () => {
+    jobs = [oldJob({ referenceNo: "PJ-1252" })];
+    const r = await findOrCreatePortalJob(recruitlyJob, client, { portalJobDocumentId: "old-1180" });
+    assert.equal(r.joined, true);
+    assert.deepEqual(writes[0].data, { recruitlyJobId: "rj-1180", referenceNo: "JB-1180", previousReferenceNo: "PJ-1252" });
+    assert.equal(r.job.referenceNo, "JB-1180");
+});
+
+test("number rules: same number → nothing; an earlier previous reference is never overwritten", () => {
+    assert.deepEqual(joinFields({ referenceNo: "JB-1180" }, "JB-1180"), {});
+    assert.deepEqual(joinFields({ referenceNo: "PJ-9", previousReferenceNo: "JB-9" }, "JB-50"), { referenceNo: "JB-50" });
+    assert.deepEqual(joinFields({ referenceNo: "" }, "JB-50"), { referenceNo: "JB-50" });
+    assert.deepEqual(joinFields({ referenceNo: "PJ-9" }, ""), {}, "Recruitly job without a reference: number left alone");
+});
+
+test("removing the link gives the portal's own number back", async () => {
+    jobs = [oldJob({ recruitlyJobId: "rj-1180", referenceNo: "JB-1180", previousReferenceNo: "PJ-1252" })];
+    await unlinkPortalJob(recruitlyJob, client);
+    assert.deepEqual(writes, [
+        { method: "PUT", documentId: "old-1180", data: { recruitlyJobId: null, referenceNo: "PJ-1252", previousReferenceNo: null } },
+    ]);
+    assert.deepEqual(unlinkFields({ referenceNo: "JB-1" }), { recruitlyJobId: null }, "no previous number: only the link is cleared");
+});
+
+test("a job created from Recruitly keeps the Recruitly JB number", async () => {
+    jobs = [];
+    await findOrCreatePortalJob(recruitlyJob, client, { createNew: true });
+    assert.equal(writes[0].data.referenceNo, "JB-1180");
+});
