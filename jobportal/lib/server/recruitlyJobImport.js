@@ -1,7 +1,7 @@
 // Portal job side of the Recruitly import (R1 part 2): find or create the portal
 // job for a Recruitly job, and add / update / remove candidates on its pipeline.
 // Server only. Writes to the portal (Strapi) only, never to Recruitly.
-import { strapiRequest } from "./portalStrapi.js";
+import { strapiFetchAll, strapiRequest } from "./portalStrapi.js";
 
 export class JobImportError extends Error {
     constructor(message, status = 400) {
@@ -65,12 +65,6 @@ function findJobByRecruitlyId(recruitlyJobId) {
     return findJobs({ recruitlyJobId: { $eq: String(recruitlyJobId) } });
 }
 
-// Jobs created in the portal before the import (e.g. the 121 jobs on live) carry
-// the Recruitly job reference (JB-xxxx) but no Recruitly job ID yet.
-function findJobByReference(reference) {
-    return findJobs({ referenceNo: { $eqi: reference } });
-}
-
 // Recruitly job (getJob().data) → portal job fields used when the portal creates it.
 export function portalJobFields(recruitlyJob, clientDocumentId) {
     const data = {
@@ -98,21 +92,171 @@ function refuseOtherClient(job, client, reference) {
     }
 }
 
-// Returns { job, created, linked }.
-// 1. Portal job linked to this Recruitly job (by Recruitly job ID).
-// 2. Otherwise a portal job with the same reference (JB-xxxx) that is not linked
-//    to Recruitly yet: it is linked (Recruitly job ID stored) and everything staff
-//    entered is kept. Created by staff before the import, so never duplicated.
-// 3. Otherwise a new portal job is created under this client.
-// Refuses a job of another client, several portal jobs with the same reference,
-// and a same-reference job already linked to a different Recruitly job.
+// ---- Join step: staff choose the portal job for a Recruitly job ----------
+// The portal's JB- numbers are its own (the job form has no reference field), so
+// the same number in Recruitly is usually a different job (checked on live
+// 18 Nov: only 3 of 68 shared numbers had the same title). A Recruitly job is
+// therefore never matched to a portal job by number: the first time it is
+// imported, staff pick the client's portal job it belongs to, or "create new".
+// After that the portal job carries the Recruitly job ID and is found directly.
+
+// Title words without case, accents, punctuation or a plural "s":
+// "Production workers - filling department" ≈ "Production Worker – Fillings Department".
+function titleWords(title) {
+    return new Set(
+        String(title || "")
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .toLowerCase()
+            .split(/[^a-z0-9]+/)
+            .filter((w) => w.length > 1)
+            .map((w) => (w.length > 3 && w.endsWith("s") ? w.slice(0, -1) : w))
+    );
+}
+
+// 0..1: share of words the two titles have in common (Dice coefficient).
+export function titleSimilarity(a, b) {
+    const x = titleWords(a);
+    const y = titleWords(b);
+    if (!x.size || !y.size) return 0;
+    let both = 0;
+    for (const w of x) if (y.has(w)) both += 1;
+    return (2 * both) / (x.size + y.size);
+}
+
+const notLinked = (job) => !String(job?.recruitlyJobId || "").trim();
+
+// Pure: the client's portal jobs not linked to Recruitly, closest title first
+// (newest first when equal). Each with how many candidates are on it.
+export function rankPortalJobs(jobs, recruitlyTitle) {
+    return (jobs || [])
+        .filter(notLinked)
+        .map((j) => ({
+            documentId: j.documentId,
+            referenceNo: j.referenceNo || "",
+            title: j.title || "",
+            statusList: j.statusList || "",
+            createdAt: j.createdAt || null,
+            candidateCount: Array.isArray(j.assignCandidatesToJob) ? j.assignCandidatesToJob.length : 0,
+            similarity: Math.round(titleSimilarity(j.title, recruitlyTitle) * 100) / 100,
+        }))
+        .sort((a, b) => b.similarity - a.similarity || String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+}
+
+// For the import screen: the portal job already linked to this Recruitly job
+// (with its lock state), and the client's portal jobs staff can choose from.
+// loadRecruitlyCandidateIds: async () => Set of the Recruitly job's candidate IDs
+// (its pipeline); only called when the linked job has Recruitly-linked candidates.
+function clientJobs(client) {
+    return strapiFetchAll("/jobs", {
+        filters: { client: { documentId: { $eq: client.documentId } } },
+        fields: ["documentId", "title", "referenceNo", "recruitlyJobId", "statusList", "createdAt"],
+        populate: { assignCandidatesToJob: { populate: { candidate: { fields: ["documentId"] } } } },
+        sort: ["createdAt:desc"],
+    });
+}
+
+export async function portalJobChoices(recruitlyJob, client, { loadRecruitlyCandidateIds } = {}) {
+    const [linked] = await findJobByRecruitlyId(recruitlyJob.id);
+    const jobs = await clientJobs(client);
+    return {
+        linked: linked
+            ? {
+                  documentId: linked.documentId,
+                  referenceNo: linked.referenceNo || "",
+                  title: linked.title || "",
+                  locked: await isLinkLocked(linked, loadRecruitlyCandidateIds),
+              }
+            : null,
+        options: rankPortalJobs(jobs, recruitlyJob.title),
+    };
+}
+
+// Once candidates of this Recruitly job have been imported onto the linked
+// portal job, the link can no longer be changed or removed from the import
+// screen (agreed 18 Nov): moving it would split the job. A wrong link is then
+// fixed by an administrator in Strapi.
+// Only this Recruitly job's candidates count: an old portal job can already hold
+// candidates linked to Recruitly through other jobs (e.g. Match Candidates), and
+// a wrong pick of such a job must still be correctable before any import.
+// recruitlyCandidateIds: Set of the Recruitly job's candidate IDs (its pipeline).
+export function linkLocked(job, recruitlyCandidateIds) {
+    return (job?.assignCandidatesToJob || []).some((item) => {
+        const id = String(item?.candidate?.recruitlyId || "").trim();
+        return id !== "" && recruitlyCandidateIds?.has(id);
+    });
+}
+
+const hasRecruitlyCandidates = (job) =>
+    (job?.assignCandidatesToJob || []).some((item) => String(item?.candidate?.recruitlyId || "").trim());
+
+// The pipeline is read only when the job holds Recruitly-linked candidates at all.
+async function isLinkLocked(job, loadRecruitlyCandidateIds) {
+    if (!hasRecruitlyCandidates(job)) return false;
+    if (!loadRecruitlyCandidateIds) return true; // cannot check: stay on the safe side
+    return linkLocked(job, await loadRecruitlyCandidateIds());
+}
+
+const LOCKED_MESSAGE =
+    "Candidates have been imported to this portal job, so the link can't be changed here. Ask your administrator if it is wrong.";
+
+// Remove link / Change: the portal job stops being linked to this Recruitly job.
+// Only the link is cleared; the job, its candidates, offer letters and chats stay.
+// Refused once this Recruitly job's candidates are on the job (linkLocked).
+// Returns the job that was unlinked, or null when nothing was linked.
+export async function unlinkPortalJob(recruitlyJob, client, { loadRecruitlyCandidateIds } = {}) {
+    const reference = String(recruitlyJob?.reference || "").trim();
+    const found = await findJobByRecruitlyId(recruitlyJob.id);
+    if (found.length === 0) return null;
+    for (const job of found) refuseOtherClient(job, client, reference);
+    for (const job of found) {
+        if (await isLinkLocked(job, loadRecruitlyCandidateIds)) throw new JobImportError(LOCKED_MESSAGE, 409);
+    }
+    for (const job of found) {
+        await strapiRequest(`/jobs/${encodeURIComponent(job.documentId)}`, {
+            method: "PUT",
+            query: { status: "published" },
+            body: { data: { recruitlyJobId: null } },
+        });
+    }
+    return found[0];
+}
+
+async function loadPortalJob(documentId) {
+    try {
+        const json = await strapiRequest(`/jobs/${encodeURIComponent(documentId)}`, {
+            query: { status: "published", fields: JOB_FIELDS, populate: JOB_POPULATE },
+        });
+        return json?.data || null;
+    } catch (error) {
+        if (error?.status === 404) return null;
+        throw error;
+    }
+}
+
+// Returns { job, created, joined }.
+// 1. Portal job already linked to this Recruitly job (by Recruitly job ID): used.
+// 2. Otherwise staff's choice, sent with the import:
+//    - portalJobDocumentId: that portal job of this client is joined (Recruitly
+//      job ID stored; title, candidates, offer letters and chats kept);
+//    - createNew: a new portal job is created under this client.
+//    - createIfClientHasNone: a new portal job is created, but only if the client
+//      has no portal job that is not linked to Recruitly (nothing to choose from;
+//      checked here, not trusted from the screen).
+//    Otherwise: refused, so an existing job is never joined without staff choosing.
+// Refuses a job of another client, a chosen job already linked to another
+// Recruitly job, and several portal jobs linked to one Recruitly job.
 // recruitlyJob may be the job-list row; loadFullJob() reads the full record
 // (with short description) and is only called when the portal job is created.
-export async function findOrCreatePortalJob(recruitlyJob, client, { loadFullJob } = {}) {
+export async function findOrCreatePortalJob(
+    recruitlyJob,
+    client,
+    { loadFullJob, portalJobDocumentId = "", createNew = false, createIfClientHasNone = false } = {}
+) {
     const reference = String(recruitlyJob?.reference || "").trim();
-    const update = {};
     let job = null;
-    let linked = false;
+    let joined = false;
+    const update = {};
 
     const found = await findJobByRecruitlyId(recruitlyJob.id);
     if (found.length > 1) {
@@ -122,28 +266,21 @@ export async function findOrCreatePortalJob(recruitlyJob, client, { loadFullJob 
     if (found.length === 1) {
         job = found[0];
         refuseOtherClient(job, client, reference);
-    } else if (reference) {
-        const sameReference = await findJobByReference(reference);
-        if (sameReference.length > 1) {
+    } else if (portalJobDocumentId) {
+        job = await loadPortalJob(portalJobDocumentId);
+        if (!job) throw new JobImportError("The chosen portal job was not found. Reload the page and choose again.", 404);
+        refuseOtherClient(job, client, reference);
+        if (!notLinked(job)) {
             throw new JobImportError(
-                `There are ${sameReference.length} portal jobs with reference ${reference}. Please keep one (or change the other's reference) and import again. Nothing was imported.`,
+                `Portal job ${job.referenceNo || job.title} is already linked to another Recruitly job. Nothing was imported.`,
                 409
             );
         }
-        if (sameReference.length === 1) {
-            const candidate = sameReference[0];
-            if (candidate.recruitlyJobId && String(candidate.recruitlyJobId) !== String(recruitlyJob.id)) {
-                throw new JobImportError(
-                    `Portal job ${candidate.referenceNo || reference} is already linked to a different Recruitly job. Nothing was imported.`,
-                    409
-                );
-            }
-            refuseOtherClient(candidate, client, reference);
-            job = candidate;
-            linked = true;
-            update.recruitlyJobId = String(recruitlyJob.id);
-            if (!job.client?.documentId) update.client = { connect: [client.documentId] };
-        }
+        joined = true;
+        update.recruitlyJobId = String(recruitlyJob.id);
+        if (!job.client?.documentId) update.client = { connect: [client.documentId] };
+    } else if (!createNew && !(createIfClientHasNone && (await clientJobs(client)).every((j) => !notLinked(j)))) {
+        throw new JobImportError("This Recruitly job is not linked to a portal job yet. Choose the portal job (or create a new one) first.", 409);
     }
 
     if (job) {
@@ -159,7 +296,7 @@ export async function findOrCreatePortalJob(recruitlyJob, client, { loadFullJob 
             if (update.jobTypeList) job.jobTypeList = update.jobTypeList;
             if (update.recruitlyJobId) job.recruitlyJobId = update.recruitlyJobId;
         }
-        return { job, created: false, linked };
+        return { job, created: false, joined };
     }
 
     const details = loadFullJob ? { ...recruitlyJob, ...(await loadFullJob()) } : recruitlyJob;
@@ -170,7 +307,7 @@ export async function findOrCreatePortalJob(recruitlyJob, client, { loadFullJob 
     });
     const [createdJob] = await findJobByRecruitlyId(recruitlyJob.id);
     if (!createdJob) throw new JobImportError("The portal job could not be created.", 502);
-    return { job: createdJob, created: true, linked: false };
+    return { job: createdJob, created: true, joined: false };
 }
 
 // Existing pipeline entry, re-sent with everything it holds (offer letter and

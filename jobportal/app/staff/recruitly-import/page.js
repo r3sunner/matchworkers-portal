@@ -294,11 +294,7 @@ function ImportResult({ result }) {
             {result?.job ? (
                 <p className="mb-3 text-sm text-gray-700">
                     Portal job <span className="font-semibold">{result.job.referenceNo || result.job.title}</span>{" "}
-                    {result.job.created
-                        ? "was created for this client."
-                        : result.job.linked
-                          ? "already existed in the portal and is now linked to Recruitly (nothing on it was replaced)."
-                          : "was updated."}
+                    {result.job.created ? "was created for this client." : "was updated."}
                 </p>
             ) : null}
             <div className="flex flex-wrap gap-2 text-xs">
@@ -367,6 +363,194 @@ function ImportResult({ result }) {
 /* Page                                                                */
 /* ------------------------------------------------------------------ */
 
+// Join step: which portal job this Recruitly job belongs to. Shown until the
+// Recruitly job is linked; after the first import it goes there automatically.
+const PICKER_SHORT_LIST = 6;
+// A portal job whose title is this close (0..1), and clearly closer than the next
+// one, is ticked in advance; staff still click Link and confirm.
+const PRESELECT_SIMILARITY = 0.8;
+
+// The option to tick in advance, or "" when there is no clear best match.
+function preselectFor(options) {
+    const [best, next] = options || [];
+    if (!best || best.similarity < PRESELECT_SIMILARITY) return "";
+    if (next && next.similarity >= best.similarity) return "";
+    return best.documentId;
+}
+
+function PortalJobPicker({ state, choice, onChoose, onRetry, onLink, linking, linkError, changing, onChange, onCancelChange, onUnlink }) {
+    const [showAll, setShowAll] = useState(false);
+    const [q, setQ] = useState("");
+
+    if (state.loading) return <Spinner label="Loading this client's portal jobs…" />;
+    if (state.error) return <ErrorBox message={state.error} onRetry={onRetry} />;
+    if (state.linked && !changing) {
+        return (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+                <span>
+                    Imports go to portal job{" "}
+                    <span className="font-semibold">
+                        {state.linked.referenceNo ? `${state.linked.referenceNo} – ` : ""}
+                        {state.linked.title}
+                    </span>
+                    .
+                </span>
+                {state.linked.locked ? (
+                    <span className="text-xs text-green-900/70">
+                        Candidates have been imported to this job, so the link can&apos;t be changed here. Ask your
+                        administrator if it is wrong.
+                    </span>
+                ) : (
+                    <span className="flex items-center gap-4">
+                        <button type="button" onClick={onChange} className="text-sm font-medium text-gray-700 hover:underline">
+                            Change
+                        </button>
+                        <button type="button" onClick={onUnlink} className="text-sm font-medium text-red-700 hover:underline">
+                            Remove link
+                        </button>
+                    </span>
+                )}
+            </div>
+        );
+    }
+
+    const options = state.options || [];
+    if (!state.linked && options.length === 0) {
+        return (
+            <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
+                This client has no portal job that is not linked to Recruitly, so a{" "}
+                <span className="font-semibold">new portal job</span> is created automatically with the first import. Later
+                imports of this Recruitly job go there too.
+            </div>
+        );
+    }
+    const preselected = preselectFor(options);
+    const needle = q.trim().toLowerCase();
+    const filtered = needle
+        ? options.filter((o) => `${o.referenceNo} ${o.title}`.toLowerCase().includes(needle))
+        : options;
+    const shown = showAll || needle ? filtered : filtered.slice(0, PICKER_SHORT_LIST);
+
+    const radio = (value, content, key) => (
+        <label
+            key={key}
+            className={cls(
+                "flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-2 text-sm",
+                choice === value ? "border-red-300 bg-red-50" : "border-gray-200 bg-white hover:bg-gray-50"
+            )}
+        >
+            <input
+                type="radio"
+                name="portal-job"
+                className="mt-1"
+                checked={choice === value}
+                onChange={() => onChoose(value)}
+            />
+            <span className="min-w-0 flex-1">{content}</span>
+        </label>
+    );
+
+    return (
+        <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-4">
+            <h3 className="text-sm font-semibold text-gray-900">Which portal job is this?</h3>
+            {changing && state.linked ? (
+                <p className="mt-1 text-xs text-gray-600">
+                    Now linked to{" "}
+                    <span className="font-semibold">
+                        {state.linked.referenceNo ? `${state.linked.referenceNo} – ` : ""}
+                        {state.linked.title}
+                    </span>
+                    . Choose another portal job for future imports. Candidates already imported stay on the current job.
+                </p>
+            ) : null}
+            <p className={cls("mt-1 text-xs text-gray-600", changing && state.linked ? "hidden" : "")}>
+                This Recruitly job is not linked to a portal job yet. If the job already exists in the portal, choose it:
+                everything on it is kept and imported candidates are added to it. If not, create a new one. This is done
+                once; later imports go there automatically. The candidates are shown after this step.
+            </p>
+
+            {options.length > PICKER_SHORT_LIST ? (
+                <input
+                    type="search"
+                    value={q}
+                    onChange={(e) => setQ(e.target.value)}
+                    placeholder="Search this client's portal jobs…"
+                    className="mt-3 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                />
+            ) : null}
+
+            <div className="mt-3 space-y-2">
+                {shown.map((o) =>
+                    radio(
+                        o.documentId,
+                        <>
+                            <span className="font-medium text-gray-900">{o.title || "(no title)"}</span>
+                            {o.documentId === preselected ? (
+                                <span className="ml-2 rounded-full bg-green-600 px-2 py-0.5 text-xs font-medium text-white">
+                                    best match
+                                </span>
+                            ) : o.similarity >= 0.5 ? (
+                                <span className="ml-2 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">
+                                    similar title
+                                </span>
+                            ) : null}
+                            <span className="block text-xs text-gray-500">
+                                {[o.referenceNo, o.statusList, `${o.candidateCount} ${o.candidateCount === 1 ? "candidate" : "candidates"}`]
+                                    .filter(Boolean)
+                                    .join(" · ")}
+                            </span>
+                        </>,
+                        o.documentId
+                    )
+                )}
+                {!showAll && !needle && filtered.length > PICKER_SHORT_LIST ? (
+                    <button
+                        type="button"
+                        onClick={() => setShowAll(true)}
+                        className="text-xs font-medium text-gray-600 underline hover:text-gray-800"
+                    >
+                        Show all {filtered.length} portal jobs of this client
+                    </button>
+                ) : null}
+                {needle && filtered.length === 0 ? <p className="text-xs text-gray-500">No portal job found.</p> : null}
+                {options.length === 0 ? (
+                    <p className="text-xs text-gray-600">This client has no portal jobs that are not linked to Recruitly.</p>
+                ) : null}
+                {radio(
+                    "new",
+                    <>
+                        <span className="font-medium text-gray-900">Create a new portal job</span>
+                        <span className="block text-xs text-gray-500">The job is not in the portal yet.</span>
+                    </>,
+                    "new"
+                )}
+            </div>
+
+            <ErrorBox message={linkError} />
+            <div className="mt-3 flex justify-end gap-2">
+                {changing && state.linked ? (
+                    <button
+                        type="button"
+                        disabled={linking}
+                        onClick={onCancelChange}
+                        className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                    >
+                        Cancel
+                    </button>
+                ) : null}
+                <button
+                    type="button"
+                    disabled={!choice || linking}
+                    onClick={onLink}
+                    className="rounded-lg bg-red-700 px-5 py-2 text-sm font-medium text-white hover:bg-red-800 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-500"
+                >
+                    {choice === "new" ? "Create portal job" : "Link to this portal job"}
+                </button>
+            </div>
+        </div>
+    );
+}
+
 export default function RecruitlyImportPage() {
     const [clients, setClients] = useState([]);
     const [companies, setCompanies] = useState([]);
@@ -394,6 +578,13 @@ export default function RecruitlyImportPage() {
     const [importProgress, setImportProgress] = useState(null); // { done, total }
     const [importResult, setImportResult] = useState(null);
     const [importError, setImportError] = useState("");
+    // Join step: { loading, error, linked, options } and staff's choice ("" | "new" | portal job documentId).
+    const [portalJobs, setPortalJobs] = useState({ loading: false, error: "", linked: null, options: [] });
+    const [portalChoice, setPortalChoice] = useState("");
+    const portalJobsRequest = useRef(0);
+    const [linkingJob, setLinkingJob] = useState(false);
+    const [jobLinkError, setJobLinkError] = useState("");
+    const [changingJob, setChangingJob] = useState(false);
 
     const setupRequest = useRef(0);
     const jobsRequest = useRef(0);
@@ -494,6 +685,91 @@ export default function RecruitlyImportPage() {
         setLoadingPipeline(false);
         setImportResult(null);
         setImportError("");
+        portalJobsRequest.current += 1;
+        setPortalJobs({ loading: false, error: "", linked: null, options: [] });
+        setPortalChoice("");
+        setJobLinkError("");
+        setChangingJob(false);
+    }
+
+    async function linkPortalJob() {
+        if (!jobId || !portalChoice) return;
+        setLinkingJob(true);
+        setJobLinkError("");
+        try {
+            const json = await fetchJson(`/api/recruitly/jobs/${encodeURIComponent(jobId)}/portal-job/`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(
+                    portalChoice === "new"
+                        ? { clientDocumentId, createNew: true, replace: changingJob }
+                        : { clientDocumentId, portalJobDocumentId: portalChoice, replace: changingJob }
+                ),
+            });
+            setPortalChoice("");
+            setChangingJob(false);
+            setConfirm(null);
+            resetPickerAfterSave();
+            loadPortalJobs(jobId);
+        } catch (error) {
+            setJobLinkError(error.message);
+            setConfirm(null);
+        } finally {
+            setLinkingJob(false);
+        }
+    }
+
+    // Candidate list and selection belong to the old link; start them fresh.
+    function resetPickerAfterSave() {
+        setSelected([]);
+        setImportResult(null);
+        setImportError("");
+    }
+
+    async function unlinkPortalJob() {
+        if (!jobId) return;
+        setLinkingJob(true);
+        setJobLinkError("");
+        try {
+            const json = await fetchJson(`/api/recruitly/jobs/${encodeURIComponent(jobId)}/portal-job/`, {
+                method: "DELETE",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ clientDocumentId }),
+            });
+            portalJobsRequest.current += 1;
+            setPortalJobs({ loading: false, error: "", linked: null, options: json.options || [] });
+            setPortalChoice(preselectFor(json.options || []));
+            setChangingJob(false);
+            resetPickerAfterSave();
+            setConfirm(null);
+        } catch (error) {
+            setJobLinkError(error.message);
+            setConfirm(null);
+        } finally {
+            setLinkingJob(false);
+        }
+    }
+
+    async function loadPortalJobs(nextJobId) {
+        const request = ++portalJobsRequest.current;
+        if (!nextJobId || !clientDocumentId) return;
+        // A refresh of the same job keeps showing the current link while it loads.
+        setPortalJobs((prev) =>
+            prev.linked && nextJobId === jobId
+                ? { ...prev, error: "" }
+                : { loading: true, error: "", linked: null, options: [] }
+        );
+        try {
+            const json = await fetchJson(
+                `/api/recruitly/jobs/${encodeURIComponent(nextJobId)}/portal-job/?clientDocumentId=${encodeURIComponent(clientDocumentId)}`
+            );
+            if (request !== portalJobsRequest.current) return;
+            setPortalJobs({ loading: false, error: "", linked: json.linked || null, options: json.options || [] });
+            // Not linked: keep staff's tick on a refresh, else tick a clear best match.
+            setPortalChoice((prev) => (json.linked ? "" : prev || preselectFor(json.options || [])));
+        } catch (error) {
+            if (request === portalJobsRequest.current) setPortalJobs({ loading: false, error: error.message, linked: null, options: [] });
+        }
     }
 
     const loadJobs = useCallback(async (companyId) => {
@@ -549,6 +825,7 @@ export default function RecruitlyImportPage() {
     function selectJob(nextJobId) {
         setJobId(nextJobId);
         loadPipeline(nextJobId);
+        loadPortalJobs(nextJobId);
     }
 
     async function saveLink(recruitlyCompanyId) {
@@ -615,6 +892,7 @@ export default function RecruitlyImportPage() {
             .filter((e) => selected.includes(e.pipelineId) && e.action === "show" && e.candidateId)
             .map((e) => e.candidateId);
         if (!jobId || candidateIds.length === 0) return;
+        if (!portalJobs.linked && !autoCreateJob) return;
 
         setImporting(true);
         setImportError("");
@@ -638,7 +916,7 @@ export default function RecruitlyImportPage() {
                         freshPipeline: i === 0,
                     }),
                 });
-                if (json.job) job = job ? { ...json.job, created: job.created || json.job.created, linked: job.linked || json.job.linked } : json.job;
+                if (json.job) job = job ? { ...json.job, created: job.created || json.job.created } : json.job;
                 calls += Number(json.recruitlyCalls) || 0;
                 for (const r of json.results || []) results.set(`${r.outcome === "removed" ? "removed:" : ""}${r.candidateId}`, r);
                 setImportProgress({ done: Math.min(i + IMPORT_BATCH, candidateIds.length), total: candidateIds.length });
@@ -669,10 +947,16 @@ export default function RecruitlyImportPage() {
             setImporting(false);
             setImportProgress(null);
             setConfirm({ kind: "result" });
+            // Imported candidates lock the portal job link (no Change / Remove link).
+            if (results.size) loadPortalJobs(jobId);
         }
     }
 
     const isLinked = Boolean(client?.recruitlyCompanyId);
+    const chosenPortalJob = portalJobs.options.find((o) => o.documentId === portalChoice) || null;
+    // Nothing to choose from: the import creates the portal job (server checks it too).
+    const autoCreateJob =
+        Boolean(job) && !portalJobs.loading && !portalJobs.error && !portalJobs.linked && portalJobs.options.length === 0;
     const showLinkPicker = client && (!isLinked || changingLink);
 
     return (
@@ -850,8 +1134,44 @@ export default function RecruitlyImportPage() {
                     ) : null}
                 </section>
 
-                {/* ---------------- Candidates ---------------- */}
+                {/* ---------------- Portal job (step 4) ---------------- */}
                 {job ? (
+                    <section className="rounded-2xl border border-gray-200 bg-white p-5">
+                        <div className="mb-3">
+                            <FieldLabel step={4} done={Boolean(portalJobs.linked)}>
+                                Portal job
+                            </FieldLabel>
+                        </div>
+                        <PortalJobPicker
+                            key={jobId}
+                            state={portalJobs}
+                            choice={portalChoice}
+                            onChoose={(value) => {
+                                setPortalChoice(value);
+                                setJobLinkError("");
+                            }}
+                            onRetry={() => loadPortalJobs(jobId)}
+                            onLink={() => setConfirm({ kind: "jobLink" })}
+                            linking={linkingJob}
+                            linkError={jobLinkError}
+                            changing={changingJob}
+                            onChange={() => {
+                                setChangingJob(true);
+                                setPortalChoice("");
+                                setJobLinkError("");
+                            }}
+                            onCancelChange={() => {
+                                setChangingJob(false);
+                                setPortalChoice("");
+                                setJobLinkError("");
+                            }}
+                            onUnlink={() => setConfirm({ kind: "jobUnlink" })}
+                        />
+                    </section>
+                ) : null}
+
+                {/* ---------------- Candidates (after the portal job is linked) ---------------- */}
+                {job && (portalJobs.linked || autoCreateJob) && !changingJob ? (
                     <section className="rounded-2xl border border-gray-200 bg-white p-5">
                         <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
                             <div>
@@ -1058,6 +1378,110 @@ export default function RecruitlyImportPage() {
                 </Modal>
             ) : null}
 
+            {confirm?.kind === "jobUnlink" && job && portalJobs.linked ? (
+                <Modal title="Remove portal job link" onClose={() => setConfirm(null)} busy={linkingJob}>
+                    <p className="text-sm text-gray-700">
+                        Remove the link between the Recruitly job{" "}
+                        <span className="font-semibold">
+                            {job.reference} – {job.title}
+                        </span>{" "}
+                        and the portal job{" "}
+                        <span className="font-semibold">
+                            {portalJobs.linked.referenceNo ? `${portalJobs.linked.referenceNo} – ` : ""}
+                            {portalJobs.linked.title}
+                        </span>
+                        ?
+                    </p>
+                    <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-gray-600">
+                        <li>The portal job and the candidates already imported onto it stay as they are.</li>
+                        <li>Before the next import of this Recruitly job you choose the portal job again.</li>
+                        <li>Saved in the portal only; nothing changes in Recruitly.</li>
+                    </ul>
+                    <div className="mt-5 flex justify-end gap-2">
+                        <button
+                            type="button"
+                            disabled={linkingJob}
+                            onClick={() => setConfirm(null)}
+                            className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="button"
+                            disabled={linkingJob}
+                            onClick={unlinkPortalJob}
+                            className="rounded-lg bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-800 disabled:opacity-60"
+                        >
+                            {linkingJob ? "Removing…" : "Remove link"}
+                        </button>
+                    </div>
+                </Modal>
+            ) : null}
+
+            {confirm?.kind === "jobLink" && job ? (
+                <Modal
+                    title={portalChoice === "new" ? "Create portal job" : "Link portal job"}
+                    onClose={() => setConfirm(null)}
+                    busy={linkingJob}
+                >
+                    <p className="text-sm text-gray-700">
+                        {portalChoice === "new" ? "Create a new portal job for " : "Link "}
+                        <span className="font-semibold">{client?.companyName}</span>
+                        {portalChoice === "new" ? " from the Recruitly job " : "'s portal job "}
+                        {portalChoice === "new" ? (
+                            <span className="font-semibold">
+                                {job.reference} – {job.title}
+                            </span>
+                        ) : (
+                            <>
+                                <span className="font-semibold">
+                                    {chosenPortalJob?.referenceNo ? `${chosenPortalJob.referenceNo} – ` : ""}
+                                    {chosenPortalJob?.title}
+                                </span>{" "}
+                                to the Recruitly job{" "}
+                                <span className="font-semibold">
+                                    {job.reference} – {job.title}
+                                </span>
+                            </>
+                        )}
+                        ?
+                    </p>
+                    <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-gray-600">
+                        {portalChoice === "new" ? (
+                            <li>The new job gets the Recruitly title and reference; no candidates yet.</li>
+                        ) : (
+                            <li>Everything on the portal job stays (title, candidates, offer letters, chats).</li>
+                        )}
+                        {changingJob && portalJobs.linked ? (
+                            <li>
+                                {portalJobs.linked.referenceNo || portalJobs.linked.title} is no longer linked. Candidates
+                                already imported stay there; they are not moved.
+                            </li>
+                        ) : null}
+                        <li>Every import of this Recruitly job will go to this portal job.</li>
+                        <li>Saved in the portal only; nothing changes in Recruitly.</li>
+                    </ul>
+                    <div className="mt-5 flex justify-end gap-2">
+                        <button
+                            type="button"
+                            disabled={linkingJob}
+                            onClick={() => setConfirm(null)}
+                            className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="button"
+                            disabled={linkingJob}
+                            onClick={linkPortalJob}
+                            className="rounded-lg bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-800 disabled:opacity-60"
+                        >
+                            {linkingJob ? "Saving…" : portalChoice === "new" ? "Create portal job" : "Link portal job"}
+                        </button>
+                    </div>
+                </Modal>
+            ) : null}
+
             {confirm?.kind === "import" && job ? (
                 <Modal title="Import candidates" onClose={() => setConfirm(null)} busy={importing}>
                     <p className="text-sm text-gray-700">
@@ -1068,6 +1492,19 @@ export default function RecruitlyImportPage() {
                         </span>{" "}
                         into the portal?
                     </p>
+                    {portalJobs.linked ? (
+                        <p className="mt-2 text-sm text-gray-700">
+                            Portal job:{" "}
+                            <span className="font-semibold">
+                                {portalJobs.linked.referenceNo ? `${portalJobs.linked.referenceNo} – ` : ""}
+                                {portalJobs.linked.title}
+                            </span>
+                        </p>
+                    ) : autoCreateJob ? (
+                        <p className="mt-2 text-sm text-gray-700">
+                            Portal job: <span className="font-semibold">a new portal job for {client?.companyName}</span>
+                        </p>
+                    ) : null}
                     <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-gray-600">
                         <li>Candidates already in the portal are updated, never added twice.</li>
                         <li>If a match is uncertain, the candidate is not imported and is listed for review.</li>

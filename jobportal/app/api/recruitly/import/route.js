@@ -7,11 +7,15 @@
 // - The pipeline is re-read here; only entries the stage mapping shows are
 //   imported, whatever the browser sent.
 // - No duplicates: an existing portal candidate is found by Recruitly ID, CA
-//   number, login email or mobile and updated. Anything uncertain (name only,
-//   several matches, already linked to another Recruitly record) is NOT created
-//   and is returned as "review".
-// - The portal job is found by Recruitly job ID or created under the chosen
-//   client; candidates are added with their mapped stage, re-imports update the
+//   number, login email or mobile and updated. Anything uncertain (same or
+//   similar name only – word order, accents, a middle name –, several matches,
+//   already linked to another Recruitly record) is NOT created and is returned
+//   as "review".
+// - The portal job is the one linked to the Recruitly job (staff link it, or
+//   create a new one, in step 4 before candidates are shown; never matched by
+//   JB number: the portal's numbers are its own). Not linked: created on the
+//   first import if the client has no unlinked portal job, else nothing imported;
+//   candidates are added with their mapped stage, re-imports update the
 //   stage, and candidates now rejected / placement ended are taken off the job
 //   (record and files kept). Offer letters and chats on the job are kept.
 import { NextResponse } from "next/server";
@@ -251,7 +255,6 @@ export async function POST(req) {
     const results = [];
     let portalJob = null;
     let jobCreated = false;
-    let jobLinked = false;
     let pipelineChange = null;
 
     try {
@@ -279,8 +282,13 @@ export async function POST(req) {
             throw new JobImportError("This Recruitly job belongs to a different company than the client's link.", 400);
         }
 
-        // Portal job: found by Recruitly job ID, or created under this client.
-        ({ job: portalJob, created: jobCreated, linked: jobLinked } = await findOrCreatePortalJob(recruitlyJob, client, { loadFullJob }));
+        // Portal job: the one linked to this Recruitly job (step 4 on the screen,
+        // POST /api/recruitly/jobs/<id>/portal-job/). Not linked yet: created only
+        // when the client has no unlinked portal job to choose from; else refused.
+        ({ job: portalJob, created: jobCreated } = await findOrCreatePortalJob(recruitlyJob, client, {
+            loadFullJob,
+            createIfClientHasNone: true,
+        }));
 
         // Re-check every candidate against the live pipeline and stage mapping.
         const { entries } = await jobPipelineForImport(jobId, { counter, fresh: freshPipeline });
@@ -446,7 +454,7 @@ export async function POST(req) {
     };
 
     console.log(
-        `[RECRUITLY_IMPORT] ${session.user?.email || "staff"} job ${jobId}: created ${summary.created}, updated ${summary.updated}, review ${summary.review}, skipped ${summary.skipped}, failed ${summary.failed}, removed ${summary.removed}, portal job ${portalJob?.referenceNo || "-"}${jobCreated ? " (created)" : jobLinked ? " (linked)" : ""}, Recruitly calls ${counter.calls}`
+        `[RECRUITLY_IMPORT] ${session.user?.email || "staff"} job ${jobId}: created ${summary.created}, updated ${summary.updated}, review ${summary.review}, skipped ${summary.skipped}, failed ${summary.failed}, removed ${summary.removed}, portal job ${portalJob?.referenceNo || "-"}${jobCreated ? " (created)" : ""}, Recruitly calls ${counter.calls}`
     );
 
     const publicResults = results.map(({ portalId: _internal, ...rest }) => rest);
@@ -454,7 +462,7 @@ export async function POST(req) {
         ok: true,
         jobId,
         job: portalJob
-            ? { documentId: portalJob.documentId, referenceNo: portalJob.referenceNo || "", title: portalJob.title || "", created: jobCreated, linked: jobLinked }
+            ? { documentId: portalJob.documentId, referenceNo: portalJob.referenceNo || "", title: portalJob.title || "", created: jobCreated }
             : null,
         summary,
         results: publicResults,
