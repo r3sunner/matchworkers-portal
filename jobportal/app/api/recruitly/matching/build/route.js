@@ -4,14 +4,17 @@
 // runs long:
 //   { step: "start" }  → one review row per unlinked portal candidate (rows staff
 //                        already decided are kept as they are), returns the
-//                        portal jobs to check. 1 Recruitly call (job list, cached).
-//   { step: "jobs", jobs: [{ documentId, referenceNo, recruitlyJobId }] }
-//                      → up to 3 jobs: reads each Recruitly job's pipeline
-//                        (1 call per job) and adds same-name suggestions.
+//                        portal jobs to check: only jobs linked to a Recruitly
+//                        job (import screen, step 4). No Recruitly call.
+//   { step: "jobs", jobs: [{ documentId, referenceNo }] }
+//                      → up to 3 jobs: reads each linked Recruitly job's
+//                        pipeline (1 call per job) and adds same-name suggestions.
+// Jobs are never paired by JB number: the portal's numbers are its own, so the
+// same number in Recruitly is usually a different job (checked on live 18 Nov).
 // Nothing is linked here: staff confirm or reject each candidate.
 import { NextResponse } from "next/server";
 import { verifyStaffSession } from "@/lib/server/requireStaffSession";
-import { RecruitlyError, createCallCounter, listAllJobPipeline, listJobsCached, mapLimit } from "@/lib/server/recruitly";
+import { RecruitlyError, createCallCounter, listAllJobPipeline, mapLimit } from "@/lib/server/recruitly";
 import { PortalStrapiError } from "@/lib/server/portalStrapi";
 import {
     MATCH_STATUS,
@@ -31,12 +34,7 @@ export const runtime = "nodejs";
 const MAX_JOBS_PER_REQUEST = 3;
 
 async function start(counter) {
-    const [candidates, rows, jobs, jobList] = await Promise.all([
-        unlinkedCandidates(),
-        allMatchRows(),
-        portalJobsWithCandidates(),
-        listJobsCached({ counter }),
-    ]);
+    const [candidates, rows, jobs] = await Promise.all([unlinkedCandidates(), allMatchRows(), portalJobsWithCandidates()]);
 
     const unlinked = new Set(candidates.map((c) => c.documentId));
     const rowByCandidate = new Map(rows.map((r) => [r.candidateDocumentId, r]));
@@ -66,25 +64,20 @@ async function start(counter) {
         }
     );
 
-    // Portal jobs with at least one unlinked candidate, and their Recruitly job (same reference).
-    const recruitlyByRef = new Map(
-        (Array.isArray(jobList?.data) ? jobList.data : [])
-            .filter((j) => j?.reference)
-            .map((j) => [String(j.reference).trim().toUpperCase(), String(j.id)])
-    );
+    // Portal jobs with at least one unlinked candidate that are linked to a
+    // Recruitly job. Jobs not linked yet are counted, not guessed.
     const toCheck = [];
-    let notInRecruitly = 0;
+    let notLinked = 0;
     for (const job of jobs) {
         if (!job.candidates.some((c) => unlinked.has(c.documentId))) continue;
-        const recruitlyJobId = job.recruitlyJobId || recruitlyByRef.get(job.referenceNo.toUpperCase());
-        if (!recruitlyJobId) {
-            notInRecruitly += 1;
+        if (!job.recruitlyJobId) {
+            notLinked += 1;
             continue;
         }
-        toCheck.push({ documentId: job.documentId, referenceNo: job.referenceNo, recruitlyJobId });
+        toCheck.push({ documentId: job.documentId, referenceNo: job.referenceNo });
     }
 
-    return { candidates: candidates.length, created, reset, linkedElsewhere, jobs: toCheck, jobsNotInRecruitly: notInRecruitly };
+    return { candidates: candidates.length, created, reset, linkedElsewhere, jobs: toCheck, jobsNotLinked: notLinked };
 }
 
 async function checkJobs(jobsIn, counter) {
@@ -95,14 +88,15 @@ async function checkJobs(jobsIn, counter) {
 
     // One job at a time: two jobs can suggest for the same candidate.
     for (const item of jobsIn) {
+        // The Recruitly job comes from the portal job's own link, never from the request.
         const job = byDoc.get(String(item?.documentId || ""));
-        if (!job || !item?.recruitlyJobId) continue;
+        if (!job?.recruitlyJobId) continue;
         const onJob = job.candidates.filter((c) => !c.recruitlyId);
         if (!onJob.length) continue;
 
         let entries;
         try {
-            ({ entries } = await listAllJobPipeline(String(item.recruitlyJobId), { counter }));
+            ({ entries } = await listAllJobPipeline(String(job.recruitlyJobId), { counter }));
         } catch (error) {
             console.error("[RECRUITLY_MATCHING] Pipeline failed:", job.referenceNo, error?.message);
             failed.push(job.referenceNo);

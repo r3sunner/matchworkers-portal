@@ -176,7 +176,7 @@ export default function RecruitlyMatchingPage() {
             setBuildSummary({
                 candidates: start.candidates,
                 jobsChecked: jobs.length,
-                jobsNotInRecruitly: start.jobsNotInRecruitly,
+                jobsNotLinked: start.jobsNotLinked,
                 linkedElsewhere: start.linkedElsewhere,
                 failed,
                 calls,
@@ -258,8 +258,10 @@ export default function RecruitlyMatchingPage() {
                         <div className="min-w-0">
                             <h2 className="text-base font-semibold text-gray-900">Suggestions</h2>
                             <p className="mt-1 text-sm text-gray-600">
-                                Looks at each portal job in Recruitly and suggests anyone with the same name on the same job. Uses one
-                                Recruitly request per job, so it takes a few minutes. Decisions already made are kept.
+                                Looks at each portal job that is linked to a Recruitly job and suggests anyone with the same name on that
+                                Recruitly job. Uses one Recruitly request per job, so it can take a few minutes. Decisions already made are
+                                kept. Portal jobs are linked on the Recruitly Import screen; for candidates on jobs that are not linked, use
+                                Link by CA number.
                             </p>
                         </div>
                         <button type="button" onClick={buildSuggestions} disabled={building} className={btnPrimary}>
@@ -283,8 +285,8 @@ export default function RecruitlyMatchingPage() {
                             <div className="rounded-xl border border-green-200 bg-green-50/60 px-4 py-3 text-sm text-gray-800">
                                 Checked {buildSummary.jobsChecked} {buildSummary.jobsChecked === 1 ? "job" : "jobs"} for {buildSummary.candidates}{" "}
                                 unlinked {buildSummary.candidates === 1 ? "candidate" : "candidates"}.
-                                {buildSummary.jobsNotInRecruitly
-                                    ? ` ${buildSummary.jobsNotInRecruitly} portal ${buildSummary.jobsNotInRecruitly === 1 ? "job was" : "jobs were"} not found in Recruitly by reference.`
+                                {buildSummary.jobsNotLinked
+                                    ? ` ${buildSummary.jobsNotLinked} portal ${buildSummary.jobsNotLinked === 1 ? "job is" : "jobs are"} not linked to a Recruitly job yet (link them on the Recruitly Import screen; until then use Link by CA number for their candidates).`
                                     : ""}
                                 {buildSummary.linkedElsewhere ? ` ${buildSummary.linkedElsewhere} already linked by an import.` : ""}
                                 {buildSummary.failed.length ? ` Could not read: ${buildSummary.failed.join(", ")} (run again later).` : ""}

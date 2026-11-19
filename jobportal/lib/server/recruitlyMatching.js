@@ -4,9 +4,10 @@
 // staff confirm or reject each candidate on the review screen.
 //
 // Suggestion source: the same name on the same job in Recruitly. For every
-// portal job with a JB- reference, the Recruitly job with that reference is
-// read (one call per job) and each unlinked portal candidate on the portal job
-// is compared by name with the people on the Recruitly job.
+// portal job linked to a Recruitly job (import screen, step 4), that Recruitly
+// job is read (one call per job) and each unlinked portal candidate on the
+// portal job is compared by name with the people on the Recruitly job. Jobs are
+// never paired by JB number: the portal's numbers are its own (checked 18 Nov).
 // The number in CV file names is NOT used (not reliable, per Matchworkers).
 //
 // Server only. Reads Recruitly (GET only), writes the portal (Strapi) only.
